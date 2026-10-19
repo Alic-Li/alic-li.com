@@ -1,0 +1,35 @@
+---
+title: 'A small space, built with intention'
+description: 'The design and engineering decisions behind this website.'
+date: 2026-10-19
+lang: en
+translationKey: building-a-personal-space
+tags: ['Astro', 'Design', 'Web']
+---
+
+A personal website can be a useful kind of notebook: a place for finished work, questions in progress, and the things learned in between.
+
+This first iteration starts with a simple idea: keep the content clear, and make the surrounding interface feel quiet.
+
+## Static where possible
+
+Most of this site is HTML generated ahead of time. Astro keeps interactive React components in small islands: appearance controls, a visual experiment, and the chat playground.
+
+```ts
+// Content is static. Only the API needs a Worker.
+export const prerender = false;
+```
+
+That boundary makes the site easy to serve and keeps the reading experience independent of JavaScript.
+
+## Two languages, one space
+
+English lives at `/`, and Simplified Chinese at `/zh/`. The language control keeps the current page. Your browser’s language never causes an automatic redirect.
+
+## A little glass, a lot of clarity
+
+Translucent surfaces work best when they have a purpose. Here, they give the navigation a subtle separation from the page. Stronger visual effects are decorative enhancements, with a simpler fallback for browsers and accessibility preferences.
+
+## What comes next
+
+The foundation is here. The collection of projects, notes, and experiments can grow at its own pace.

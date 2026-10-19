@@ -1,0 +1,58 @@
+{
+  "name": "alic-li-com",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "bun@1.4.3",
+  "engines": {
+    "bun": "1.4.x"
+  },
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "check": "astro check && tsc --noEmit",
+    "deploy": "wrangler deploy",
+    "preview": "wrangler dev",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@astrojs/cloudflare": "14.4.0",
+    "@astrojs/markdown-remark": "7.3.3",
+    "@astrojs/mdx": "8.1.0",
+    "@astrojs/react": "7.1.0",
+    "@astrojs/rss": "4.0.19",
+    "@astrojs/sitemap": "3.7.4",
+    "@fontsource-variable/geist": "5.3.0",
+    "@fontsource-variable/jetbrains-mono": "5.3.0",
+    "@fontsource-variable/noto-sans-sc": "5.3.1",
+    "@radix-ui/react-dropdown-menu": "2.2.1",
+    "@radix-ui/react-slot": "1.5.0",
+    "@tailwindcss/vite": "4.3.3",
+    "astro": "7.4.0",
+    "class-variance-authority": "0.7.1",
+    "clsx": "2.1.1",
+    "katex": "0.19.0",
+    "liquid-glass-react": "1.1.1",
+    "lucide-react": "1.59.0",
+    "motion": "14.3.1",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "react-markdown": "10.1.0",
+    "rehype-katex": "7.0.1",
+    "remark-gfm": "4.0.1",
+    "remark-math": "6.0.0",
+    "tailwind-merge": "3.7.0",
+    "tailwindcss": "4.3.3"
+  },
+  "devDependencies": {
+    "@astrojs/check": "0.9.10",
+    "@cloudflare/workers-types": "5.20261019.1",
+    "@types/bun": "1.4.3",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "prettier": "3.9.10",
+    "prettier-plugin-astro": "1.1.1",
+    "typescript": "6.0.3",
+    "wrangler": "4.151.1"
+  }
+}

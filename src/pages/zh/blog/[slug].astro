@@ -1,0 +1,48 @@
+---
+import { getCollection, render } from 'astro:content';
+import Layout from '../../../layouts/Layout.astro';
+import { t, htmlLang } from '../../../lib/i18n';
+import 'katex/dist/katex.min.css';
+export async function getStaticPaths() {
+  return (await getCollection('blog', ({ data }) => data.lang === 'zh')).map(
+    (post) => ({ params: { slug: post.data.translationKey }, props: { post } }),
+  );
+}
+const { post } = Astro.props;
+const { Content } = await render(post);
+const d = t('zh');
+const translated = (await getCollection('blog')).some(
+  (p) =>
+    p.data.lang === 'en' && p.data.translationKey === post.data.translationKey,
+);
+---
+
+<Layout
+  lang="zh"
+  path={`blog/${post.data.translationKey}`}
+  alternatePath={translated ? `blog/${post.data.translationKey}` : 'blog'}
+  title={post.data.title}
+  description={post.data.description}
+>
+  <article class="container page-content">
+    <header class="page-header article-header">
+      <a class="text-link" href="/zh/blog">
+        ← {d.back}
+      </a>
+      <h1>{post.data.title}</h1>
+      <p>{post.data.description}</p>
+    </header>
+    <div class="article-meta">
+      <time datetime={post.data.date.toISOString()}>
+        {new Intl.DateTimeFormat(htmlLang('zh'), {
+          dateStyle: 'long',
+          timeZone: 'UTC',
+        }).format(post.data.date)}
+      </time>{' '}
+      · {post.data.tags.join(' / ')}
+    </div>
+    <div class="prose">
+      <Content />
+    </div>
+  </article>
+</Layout>

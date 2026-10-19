@@ -1,0 +1,20 @@
+---
+import Layout from '../layouts/Layout.astro';
+import Section from '../components/Section.astro';
+import { locales, t } from '../lib/i18n';
+export function getStaticPaths() {
+  return locales.flatMap((lang) =>
+    (['about', 'blog', 'projects', 'publications', 'lab'] as const).map(
+      (page) => ({
+        params: { route: `${lang === 'zh' ? 'zh/' : ''}${page}` },
+        props: { lang, page },
+      }),
+    ),
+  );
+}
+const { lang, page } = Astro.props;
+---
+
+<Layout lang={lang} path={page} title={t(lang).nav[page]}>
+  <Section lang={lang} page={page} />
+</Layout>

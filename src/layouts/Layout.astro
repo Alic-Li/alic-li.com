@@ -1,0 +1,146 @@
+---
+import '../styles/global.css';
+import '@fontsource-variable/geist';
+import '@fontsource-variable/noto-sans-sc';
+import '@fontsource-variable/jetbrains-mono';
+import Preferences from '../components/Preferences';
+import { t, htmlLang, pathFor, type Locale } from '../lib/i18n';
+interface Props {
+  lang: Locale;
+  title?: string;
+  description?: string;
+  path?: string;
+  alternatePath?: string;
+}
+const {
+  lang,
+  title,
+  description,
+  path = '',
+  alternatePath = path,
+} = Astro.props;
+const d = t(lang);
+const alternate = pathFor(lang === 'en' ? 'zh' : 'en', alternatePath);
+const canonical = new URL(pathFor(lang, path), Astro.site);
+const nav = ['about', 'blog', 'projects', 'publications', 'lab'] as const;
+---
+
+<!doctype html>
+<html lang={htmlLang(lang)}>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title ? `${title} — Alic Li` : 'Alic Li — ' + d.hero + ' ' + d.heroAccent}</title>
+    <meta name="description" content={description || d.description} />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="canonical" href={canonical} />
+    <link rel="alternate" hreflang={htmlLang(lang)} href={canonical} />
+    <link
+      rel="alternate"
+      hreflang={lang === 'en' ? 'zh-CN' : 'en'}
+      href={new URL(alternate, Astro.site)}
+    />
+    <link
+      rel="alternate"
+      hreflang="x-default"
+      href={
+        new URL(lang === 'en' ? pathFor('en', path) : alternate, Astro.site)
+      }
+    />
+    <link
+      rel="alternate"
+      type="application/rss+xml"
+      title={d.nav.blog}
+      href={pathFor(lang, 'rss.xml')}
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content={title || 'Alic Li'} />
+    <meta property="og:description" content={description || d.description} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:locale" content={lang === 'en' ? 'en_US' : 'zh_CN'} />
+    <script is:inline>
+      (() => {
+        const media = matchMedia('(prefers-color-scheme: dark)');
+        let preference = 'system';
+        try {
+          const stored = localStorage.getItem('appearance');
+          if (['light', 'dark'].includes(stored)) preference = stored;
+        } catch {}
+        const apply = () => {
+          document.documentElement.dataset.theme =
+            preference === 'system'
+              ? media.matches
+                ? 'dark'
+                : 'light'
+              : preference;
+        };
+        apply();
+        media.addEventListener('change', apply);
+        window.addEventListener('appearance-change', (event) => {
+          preference = event.detail;
+          apply();
+        });
+      })();
+    </script>
+  </head>
+  <body>
+    <a href="#main" class="skip-link">
+      {d.skip}
+    </a>
+    <header class="header-wrap">
+      <div class="nav-shell glass">
+        <a
+          class="wordmark"
+          href={pathFor(lang)}
+          aria-label={`Alic Li — ${d.nav.home}`}
+        >
+          alic li<span class="brand-dot">.</span>
+        </a>
+        <nav aria-label={d.menu} class="desktop-nav">
+          {nav.map((key) => (
+            <a
+              href={pathFor(lang, key)}
+              aria-current={path.split('/')[0] === key ? 'page' : undefined}
+            >
+              {d.nav[key]}
+            </a>
+          ))}
+        </nav>
+        <Preferences lang={lang} alternate={alternate} client:load />
+        <details class="mobile-nav">
+          <summary aria-label={d.menu}>
+            <span></span>
+            <span></span>
+          </summary>
+          <nav class="glass" aria-label={d.menu}>
+            {nav.map((key) => (
+              <a
+                href={pathFor(lang, key)}
+                aria-current={path.split('/')[0] === key ? 'page' : undefined}
+              >
+                {d.nav[key]}
+              </a>
+            ))}
+          </nav>
+        </details>
+      </div>
+    </header>
+    <main id="main">
+      <slot />
+    </main>
+    <footer class="site-footer">
+      <a href={pathFor(lang)} class="wordmark">
+        alic li<span class="brand-dot">.</span>
+      </a>
+      <p>{d.footer}</p>
+      <div>
+        <a href="https://github.com/Alic-Li" rel="me">
+          GitHub ↗
+        </a>
+        <a href={pathFor(lang, 'rss.xml')}>RSS ↗</a>
+        <span>© {new Date().getFullYear()}</span>
+      </div>
+    </footer>
+  </body>
+</html>

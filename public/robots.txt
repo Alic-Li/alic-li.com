@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://alic-li.com/sitemap-index.xml

@@ -1,0 +1,121 @@
+---
+import HeroArt from './HeroArt';
+import { t, pathFor, htmlLang, type Locale } from '../lib/i18n';
+import { getCollection } from 'astro:content';
+const { lang } = Astro.props as { lang: Locale };
+const d = t(lang);
+const posts = (await getCollection('blog', ({ data }) => data.lang === lang))
+  .sort((a, b) => b.data.date.getTime() - a.data.date.getTime())
+  .slice(0, 2);
+---
+
+<div class="container">
+  <section class="hero">
+    <div>
+      <p class="eyebrow">{d.eyebrow}</p>
+      <h1>
+        {d.hero}
+        <br />
+        <em>{d.heroAccent}</em>
+      </h1>
+      <p class="intro">{d.intro}</p>
+      <div class="hero-actions">
+        <a href={pathFor(lang, 'projects')} class="primary-link">
+          {d.explore}
+          <span aria-hidden="true">↗</span>
+        </a>
+        <a href={pathFor(lang, 'about')} class="text-link">
+          {d.aboutLink}
+          <span aria-hidden="true">→</span>
+        </a>
+      </div>
+    </div>
+    <HeroArt lang={lang} client:visible />
+  </section>
+  <section class="workbench">
+    <div>
+      <span class="section-label">{d.current}</span>
+      <h2>{d.currentTitle}</h2>
+      <p>{d.currentBody}</p>
+      <a href={pathFor(lang, 'lab/chat')} class="text-link">
+        {d.playground}
+        <span aria-hidden="true">↗</span>
+      </a>
+    </div>
+    <div class="experiment-visual" aria-hidden="true">
+      {Array.from({ length: 29 }, (_, i) => (
+        <span
+          style={`--bar:${15 + Math.sin(i * 0.6) ** 2 * 50 + Math.cos(i * 0.2) ** 2 * 20}px`}
+        ></span>
+      ))}
+    </div>
+  </section>
+  <section>
+    <div class="section-heading">
+      <div>
+        <h2>{d.selected}</h2>
+        <p>{d.selectedSub}</p>
+      </div>
+      <span class="section-label">01 — 03</span>
+    </div>
+    <div class="explore-grid">
+      {[
+        {
+          path: 'projects',
+          icon: '⌘',
+          title: d.projectTitle,
+          body: d.projectBody,
+        },
+        {
+          path: 'publications',
+          icon: '↗',
+          title: d.researchTitle,
+          body: d.researchBody,
+        },
+        { path: 'lab', icon: '※', title: d.labTitle, body: d.labBody },
+      ].map((card) => (
+        <a class="explore-card" href={pathFor(lang, card.path)}>
+          <div class="card-top">
+            <span class="card-icon" aria-hidden="true">
+              {card.icon}
+            </span>
+            <span aria-hidden="true">↗</span>
+          </div>
+          <h3>{card.title}</h3>
+          <p>{card.body}</p>
+        </a>
+      ))}
+    </div>
+  </section>
+  <section class="writing-section">
+    <div class="section-heading">
+      <div>
+        <span class="section-label">{d.writingLabel}</span>
+        <h2 style="margin-top:10px">{d.latest}</h2>
+      </div>
+      <a class="text-link" href={pathFor(lang, 'blog')}>
+        {d.allWriting} <span aria-hidden="true">→</span>
+      </a>
+    </div>
+    {posts.map((post) => (
+      <a
+        class="post-row"
+        href={pathFor(lang, `blog/${post.data.translationKey}`)}
+      >
+        <time datetime={post.data.date.toISOString()}>
+          {new Intl.DateTimeFormat(htmlLang(lang), {
+            month: 'short',
+            day: '2-digit',
+            year: 'numeric',
+            timeZone: 'UTC',
+          }).format(post.data.date)}
+        </time>
+        <div>
+          <h3>{post.data.title}</h3>
+          <p>{post.data.description}</p>
+        </div>
+        <span aria-hidden="true">↗</span>
+      </a>
+    ))}
+  </section>
+</div>
