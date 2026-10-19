@@ -41,7 +41,12 @@ const nav = [
     <title>{title ? `${title} — Alic Li` : 'Alic Li — ' + d.hero + ' ' + d.heroAccent}</title>
     <meta name="description" content={description || d.description} />
     <meta name="color-scheme" content="light dark" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      sizes="any"
+      href="/favicon.svg?v=20261019-raven"
+    />
     <link rel="canonical" href={canonical} />
     <link rel="alternate" hreflang={htmlLang(lang)} href={canonical} />
     <link

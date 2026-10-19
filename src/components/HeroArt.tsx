@@ -4,7 +4,7 @@ export default function HeroArt({ lang }: { lang: Locale }) {
   return (
     <figure className="hero-art">
       <div className="art-glow" aria-hidden="true" />
-      <div className="raven-panel">
+      <div className="raven-layer">
         <img
           src="/raven.png"
           width={1536}
@@ -14,7 +14,6 @@ export default function HeroArt({ lang }: { lang: Locale }) {
           decoding="async"
         />
       </div>
-      <figcaption className="art-caption">{t(lang).artCaption}</figcaption>
     </figure>
   );
 }

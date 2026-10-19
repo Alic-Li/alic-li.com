@@ -16,7 +16,7 @@ The local machine initially had no Node executable. Falling back to Bun as the C
 - Navigation and language controls use Motion shared-layout indicators with spring transitions, on CSS glass surfaces with inset highlights and blur. Native links work without hydration; ordinary clicks allow a brief indicator transition before navigation. Modified clicks preserve browser behavior.
 - The same navigation wraps below the brand and preferences on mobile, with horizontal overflow available at very narrow widths. Touch targets are at least 44px tall.
 - Preferences retain Radix Dropdown Menu for theme keyboard/focus behavior. System is the default; explicit choices retain the existing storage key and theme event. Both palettes use independent design tokens.
-- Reduced motion disables spring transitions and the raven’s short CSS float animation. The unchanged raven image renders without client hydration, with explicit dimensions and a soft-white panel that preserves its opaque background and plumage colors in either theme.
+- Reduced motion disables spring transitions and the raven’s short CSS float animation. The unchanged raven image renders without client hydration, with explicit dimensions. The supplied transparent raven sits behind the desktop hero copy, with a soft left-side mask for text legibility; mobile shows the complete illustration below the copy.
 - Glass has opaque fallbacks for missing backdrop-filter and increased contrast; forced-colors mode preserves control outlines. No custom rendering or displacement engine is used. Existing dependencies are unchanged.
 
 ## Content and typography
