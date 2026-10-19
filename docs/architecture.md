@@ -13,10 +13,11 @@ The local machine initially had no Node executable. Falling back to Bun as the C
 ## Visual components
 
 - [React Bits](https://reactbits.dev/) was evaluated. Its source-owned components are useful, but GPU-heavy backgrounds add unnecessary dependencies and continuous rendering to this editorial page. No WebGL background is used.
-- [liquid-glass-react](https://github.com/rdev/liquid-glass-react) 1.1.1 supplies an optional decorative lens. The upstream README explicitly documents missing displacement in Safari and Firefox. The repository has a small commit history, so adoption is isolated behind a lazy import, not a foundational layout dependency. No custom displacement or shader code is implemented.
-- Chromium desktop can load the lens. Other browsers, mobile, reduced-motion, increased-contrast, and forced-colors use the static decoration. The navigation always uses a readable CSS frosted surface; unsupported backdrop-filter uses an opaque surface. Browser detection is only an enhancement gate, never a functional requirement.
-- Motion animates a single transform for three slow cycles and honors reduced motion. There is no perpetual canvas or expensive animated backdrop filter.
-- Preferences use Radix Dropdown Menu for keyboard/focus behavior. The local shadcn-style Button uses Radix Slot, CVA, and Tailwind class merging. Mobile navigation is native details/summary and works without JavaScript.
+- Navigation and language controls use Motion shared-layout indicators with spring transitions, on CSS glass surfaces with inset highlights and blur. Native links work without hydration; ordinary clicks allow a brief indicator transition before navigation. Modified clicks preserve browser behavior.
+- The same navigation wraps below the brand and preferences on mobile, with horizontal overflow available at very narrow widths. Touch targets are at least 44px tall.
+- Preferences retain Radix Dropdown Menu for theme keyboard/focus behavior. System is the default; explicit choices retain the existing storage key and theme event. Both palettes use independent design tokens.
+- Reduced motion disables spring transitions and the raven’s short CSS float animation. The unchanged raven image renders without client hydration, with explicit dimensions and a soft-white panel that preserves its opaque background and plumage colors in either theme.
+- Glass has opaque fallbacks for missing backdrop-filter and increased contrast; forced-colors mode preserves control outlines. No custom rendering or displacement engine is used. Existing dependencies are unchanged.
 
 ## Content and typography
 

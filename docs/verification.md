@@ -27,3 +27,12 @@ Verified on 2026-10-19 with Bun 1.4.3, Node 24.10.0, Astro 7.4.0, and Wrangler 4
 This machine initially had Bun but no Node executable. Running Cloudflare's Miniflare CLI stack under the implicit Bun fallback caused refused loopback requests and stalled workerd prerendering. Installing the official checksum-verified Node 24.10.0 runtime fixed development, production builds, and local Worker requests. The runtime is installed at `~/.local/lib/node-v24.10.0-darwin-arm64`, linked from `~/.local/bin/node`. No npm/yarn/pnpm installation or lockfile is used; Bun remains canonical.
 
 When rebuilding while Wrangler is serving `dist`, restart Wrangler afterward so its asset index reflects the new build.
+
+## Resume and visual refinement — 2026-10-19
+
+- `bun run check`: zero errors, warnings, or hints; TypeScript succeeds.
+- `bun run test`: all nine existing tests pass.
+- `bun run build`: Cloudflare build and all prerendered routes succeed.
+- Built HTML smoke check: local links resolve across all 17 pages; all six projects and the publication link appear in both languages. Published raven bytes match the supplied image exactly.
+- Chrome desktop: visually reviewed the light and dark homepage, raven panel, segmented controls, and theme menu. The default System choice and selection of Dark were confirmed through the accessibility tree and screenshot.
+- Mobile, Safari/Firefox, reduced-motion emulation, language interaction, and the full keyboard matrix have not been visually verified in this pass. Native Chrome inspection became unavailable while opening responsive tools. Responsive CSS, native-link fallbacks, Motion reduced-motion handling, and Radix menu behavior remain in the implementation.

@@ -30,7 +30,7 @@ const posts = (await getCollection('blog', ({ data }) => data.lang === lang))
         </a>
       </div>
     </div>
-    <HeroArt lang={lang} client:visible />
+    <HeroArt lang={lang} />
   </section>
   <section class="workbench">
     <div>
