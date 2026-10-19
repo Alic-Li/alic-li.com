@@ -44,3 +44,10 @@ When rebuilding while Wrangler is serving `dist`, restart Wrangler afterward so 
 - Navigation suppresses text selection and native link dragging; horizontal pointer drags preview segments and release commits the selected page.
 - `bun run check`, `bun run build`, and all 11 tests pass, including section ordering, Chinese routes, nested routes, and history direction.
 - Chrome built-preview checks: theme button directly switched to Dark; dragging Home to Projects reached the project page; switching to Chinese updated the persistent navigation labels and retained the dark theme. Native touch-device and cross-browser gesture testing remain unverified.
+
+## Language dragging and artwork — 2026-10-19
+
+- Enabled the shared pointer-drag behavior and vertical-scroll gesture handling for the language control. Chrome preview verified dragging EN to 中文 reaches the corresponding Chinese About page.
+- Lossless WebP conversion preserves every RGBA byte: raven remains 1536 × 1024 and water remains 3605 × 2226. Combined files shrink from 7,509,844 to 4,811,778 bytes (35.9%). Duplicate PNGs were removed after verification.
+- Chrome desktop light/English and dark/Chinese About previews show the water artwork behind the content, with feathered edges and rounded corners. Mobile/device testing remains unverified.
+- `bun run check`, all 11 tests, and `bun run build` pass.

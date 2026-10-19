@@ -26,7 +26,9 @@ const posts = (
 ).sort((a, b) => b.data.date.getTime() - a.data.date.getTime());
 ---
 
-<div class="container page-content">
+<div
+  class:list={['container', 'page-content', { 'about-page': page === 'about' }]}
+>
   <header class="page-header">
     <span class="section-label">{d.nav[page]}</span>
     <h1>{titles[page]}</h1>
@@ -49,6 +51,18 @@ const posts = (
         </a>
         <a href="mailto:alic2591709191@gmail.com">Email ↗</a>
       </div>
+    </div>
+  )}
+  {page === 'about' && (
+    <div class="about-water" aria-hidden="true">
+      <img
+        src="/water.webp"
+        width="3605"
+        height="2226"
+        alt=""
+        decoding="async"
+        loading="lazy"
+      />
     </div>
   )}
   {page === 'blog' &&

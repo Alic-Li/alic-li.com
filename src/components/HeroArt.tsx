@@ -6,7 +6,7 @@ export default function HeroArt({ lang }: { lang: Locale }) {
       <div className="art-glow" aria-hidden="true" />
       <div className="raven-layer">
         <img
-          src="/raven.png"
+          src="/raven.webp"
           width={1536}
           height={1024}
           alt={t(lang).ravenAlt}

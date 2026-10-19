@@ -59,7 +59,6 @@ export default function GlassSegments({
   }
   function pointerDown(event: PointerEvent<HTMLElement>) {
     if (
-      compact ||
       !event.isPrimary ||
       event.button !== 0 ||
       event.metaKey ||

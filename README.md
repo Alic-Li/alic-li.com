@@ -62,6 +62,6 @@ Automatic dependency installation is disabled so `bun ci` is the single reproduc
 - `src/lib/i18n.ts`: centralized English and Chinese interface copy
 - `src/styles/global.css`: design tokens, responsive layout, themes, accessibility fallbacks
 
-Keep a matching translationKey for translated articles. If the counterpart is missing, the language control opens the destination blog index. Biography, project descriptions, and research details are based on Alic’s supplied resume. Project entries live in `src/lib/projects.ts`; interface and biography translations live in `src/lib/i18n.ts`. The supplied `public/raven.png` is displayed unchanged.
+Keep a matching translationKey for translated articles. If the counterpart is missing, the language control opens the destination blog index. Biography, project descriptions, and research details are based on Alic’s supplied resume. Project entries live in `src/lib/projects.ts`; interface and biography translations live in `src/lib/i18n.ts`. The supplied artwork is served as lossless `public/raven.webp` and `public/water.webp`. Both retain the original dimensions and exact RGBA pixels; About places the water illustration behind the content with CSS feathering and rounded corners.
 
 See [architecture decisions](docs/architecture.md) and [verification](docs/verification.md).

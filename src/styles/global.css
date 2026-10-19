@@ -138,11 +138,11 @@ button:disabled {
   border-radius: 999px;
   padding: 4px;
   isolation: isolate;
+  touch-action: pan-y;
   user-select: none;
   -webkit-user-select: none;
 }
 .navigation-segments {
-  touch-action: pan-y;
   margin-left: auto;
 }
 .glass-segments a {
@@ -554,6 +554,46 @@ button:disabled {
   min-height: 55vh;
   padding-bottom: 70px;
 }
+.about-page {
+  position: relative;
+  isolation: isolate;
+  padding-bottom: 220px;
+}
+.about-page > .page-header,
+.about-page > .prose {
+  position: relative;
+  z-index: 1;
+}
+.about-water {
+  position: absolute;
+  z-index: 0;
+  right: -2%;
+  bottom: 0;
+  width: 88%;
+  border-radius: 48px;
+  overflow: hidden;
+  pointer-events: none;
+  opacity: 0.8;
+  mask-image:
+    linear-gradient(
+      90deg,
+      transparent,
+      #0003 30%,
+      #000 65%,
+      #000 90%,
+      transparent
+    ),
+    linear-gradient(transparent, #000 22%, #000 76%, transparent);
+  mask-composite: intersect;
+}
+.about-water img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+[data-theme='dark'] .about-water {
+  opacity: 0.7;
+}
 .prose {
   max-width: 700px;
   line-height: 1.9;
@@ -896,6 +936,18 @@ html[lang='zh-CN'] .prose {
     width: 100%;
     justify-content: flex-end;
   }
+  .about-page {
+    padding-bottom: 30px;
+  }
+  .about-water {
+    position: relative;
+    right: auto;
+    bottom: auto;
+    width: 100%;
+    margin-top: 24px;
+    border-radius: 24px;
+    mask-image: radial-gradient(ellipse, #000 42%, transparent 76%);
+  }
   .page-header {
     padding-top: 60px;
   }
@@ -938,7 +990,8 @@ html[lang='zh-CN'] .prose {
     background: var(--surface);
     backdrop-filter: none;
   }
-  .art-glow {
+  .art-glow,
+  .about-water {
     display: none;
   }
 }
@@ -949,7 +1002,8 @@ html[lang='zh-CN'] .prose {
   .primary-link {
     border: 1px solid CanvasText;
   }
-  .art-glow {
+  .art-glow,
+  .about-water {
     display: none;
   }
   .card-icon {
