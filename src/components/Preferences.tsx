@@ -1,10 +1,8 @@
 import { useEffect, useState } from 'react';
-import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
-import { Check, Monitor, Moon, Sun } from 'lucide-react';
+import { Moon, Sun } from 'lucide-react';
 import GlassSegments from './GlassSegments';
 import { Button } from './ui/button';
 import { t, pathFor, type Locale } from '../lib/i18n';
-type Theme = 'system' | 'light' | 'dark';
 export default function Preferences({
   lang,
   alternate,
@@ -15,16 +13,21 @@ export default function Preferences({
   path: string;
 }) {
   const d = t(lang);
-  const [theme, setTheme] = useState<Theme>('system');
+  const [dark, setDark] = useState(false);
   useEffect(() => {
-    try {
-      const value = localStorage.getItem('appearance');
-      if (value === 'light' || value === 'dark') setTheme(value);
-    } catch {}
+    const sync = () =>
+      setDark(document.documentElement.dataset.theme === 'dark');
+    sync();
+    const observer = new MutationObserver(sync);
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['data-theme'],
+    });
+    return () => observer.disconnect();
   }, []);
-  function changeTheme(value: string) {
-    const next = value as Theme;
-    setTheme(next);
+  function toggleTheme() {
+    const next =
+      document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
     try {
       localStorage.setItem('appearance', next);
     } catch {}
@@ -53,48 +56,17 @@ export default function Preferences({
           },
         ]}
       />
-      <DropdownMenu.Root>
-        <DropdownMenu.Trigger asChild>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="theme-trigger glass"
-            aria-label={d.appearance}
-          >
-            <Sun className="theme-sun" size={17} />
-            <Moon className="theme-moon" size={17} />
-          </Button>
-        </DropdownMenu.Trigger>
-        <DropdownMenu.Portal>
-          <DropdownMenu.Content
-            className="dropdown glass"
-            align="end"
-            sideOffset={12}
-          >
-            <DropdownMenu.Label className="dropdown-label">
-              {d.appearance}
-            </DropdownMenu.Label>
-            <DropdownMenu.RadioGroup value={theme} onValueChange={changeTheme}>
-              {(['system', 'light', 'dark'] as const).map((value, index) => {
-                const Icon = [Monitor, Sun, Moon][index];
-                return (
-                  <DropdownMenu.RadioItem
-                    className="dropdown-item"
-                    value={value}
-                    key={value}
-                  >
-                    <Icon size={15} />
-                    {d[value]}
-                    <DropdownMenu.ItemIndicator className="ml-auto">
-                      <Check size={14} />
-                    </DropdownMenu.ItemIndicator>
-                  </DropdownMenu.RadioItem>
-                );
-              })}
-            </DropdownMenu.RadioGroup>
-          </DropdownMenu.Content>
-        </DropdownMenu.Portal>
-      </DropdownMenu.Root>
+      <Button
+        variant="ghost"
+        size="icon"
+        className="theme-trigger"
+        aria-label={dark ? d.switchToLight : d.switchToDark}
+        title={dark ? d.switchToLight : d.switchToDark}
+        onClick={toggleTheme}
+      >
+        <Sun className="theme-sun" size={17} aria-hidden="true" />
+        <Moon className="theme-moon" size={17} aria-hidden="true" />
+      </Button>
     </div>
   );
 }

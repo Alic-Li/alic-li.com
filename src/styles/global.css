@@ -43,6 +43,7 @@ html[lang='zh-CN'] {
 }
 html {
   scroll-behavior: smooth;
+  scrollbar-gutter: stable;
   scroll-padding-top: 110px;
 }
 body {
@@ -115,6 +116,8 @@ button:disabled {
   margin: auto;
 }
 .nav-shell {
+  user-select: none;
+  -webkit-user-select: none;
   min-height: 76px;
   border-radius: 28px;
   padding: 12px 18px;
@@ -135,8 +138,11 @@ button:disabled {
   border-radius: 999px;
   padding: 4px;
   isolation: isolate;
+  user-select: none;
+  -webkit-user-select: none;
 }
 .navigation-segments {
+  touch-action: pan-y;
   margin-left: auto;
 }
 .glass-segments a {
@@ -184,10 +190,23 @@ button:disabled {
   min-width: 50px;
 }
 .theme-trigger {
+  border: 0;
   border-radius: 50%;
   width: 44px;
   height: 44px;
-  color: var(--foreground);
+  background: var(--surface-glass);
+  color: var(--accent);
+  box-shadow: none;
+  transition:
+    background-color 180ms,
+    color 180ms;
+}
+.theme-trigger:hover {
+  background: var(--hero-blue);
+}
+.theme-trigger:focus-visible {
+  outline: 2px solid var(--muted);
+  outline-offset: 3px;
 }
 .theme-moon {
   display: none;
@@ -953,5 +972,60 @@ html[lang='zh-CN'] .prose {
   .hero-actions {
     gap: 14px;
     flex-wrap: wrap;
+  }
+}
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+}
+::view-transition-group(workspace) {
+  overflow: clip;
+}
+::view-transition-old(workspace),
+::view-transition-new(workspace) {
+  mix-blend-mode: normal;
+  opacity: 1;
+  animation-fill-mode: both;
+  animation-duration: 420ms;
+  animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+html[data-slide='left']::view-transition-old(workspace) {
+  animation-name: workspace-out-left;
+}
+html[data-slide='left']::view-transition-new(workspace) {
+  animation-name: workspace-in-right;
+}
+html[data-slide='right']::view-transition-old(workspace) {
+  animation-name: workspace-out-right;
+}
+html[data-slide='right']::view-transition-new(workspace) {
+  animation-name: workspace-in-left;
+}
+@keyframes workspace-out-left {
+  to {
+    transform: translateX(-100vw);
+  }
+}
+@keyframes workspace-in-right {
+  from {
+    transform: translateX(100vw);
+  }
+}
+@keyframes workspace-out-right {
+  to {
+    transform: translateX(100vw);
+  }
+}
+@keyframes workspace-in-left {
+  from {
+    transform: translateX(-100vw);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
   }
 }

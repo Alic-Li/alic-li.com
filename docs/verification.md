@@ -36,3 +36,11 @@ When rebuilding while Wrangler is serving `dist`, restart Wrangler afterward so 
 - Built HTML smoke check: local links resolve across all 17 pages; all six projects and the publication link appear in both languages. Published raven bytes match the supplied image exactly.
 - Chrome desktop: visually reviewed the light and dark homepage, raven panel, segmented controls, and theme menu. The default System choice and selection of Dark were confirmed through the accessibility tree and screenshot.
 - Mobile, Safari/Firefox, reduced-motion emulation, language interaction, and the full keyboard matrix have not been visually verified in this pass. Native Chrome inspection became unavailable while opening responsive tools. Responsive CSS, native-link fallbacks, Motion reduced-motion handling, and Radix menu behavior remain in the implementation.
+
+## Navigation interaction refinement — 2026-10-19
+
+- Replaced the appearance menu with a borderless light/dark button, retaining the System default until explicitly toggled.
+- Added Astro ClientRouter, persistent React navigation/preferences, section-order workspace slides, theme preservation before swaps, stable scrollbar space, and reduced-motion/unsupported-browser fallbacks.
+- Navigation suppresses text selection and native link dragging; horizontal pointer drags preview segments and release commits the selected page.
+- `bun run check`, `bun run build`, and all 11 tests pass, including section ordering, Chinese routes, nested routes, and history direction.
+- Chrome built-preview checks: theme button directly switched to Dark; dragging Home to Projects reached the project page; switching to Chinese updated the persistent navigation labels and retained the dark theme. Native touch-device and cross-browser gesture testing remain unverified.

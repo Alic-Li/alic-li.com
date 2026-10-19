@@ -1,5 +1,6 @@
 ---
 import '../styles/global.css';
+import { ClientRouter } from 'astro:transitions';
 import '@fontsource-variable/geist';
 import '@fontsource-variable/noto-sans-sc';
 import '@fontsource-variable/jetbrains-mono';
@@ -37,6 +38,7 @@ const nav = [
 <html lang={htmlLang(lang)}>
   <head>
     <meta charset="UTF-8" />
+    <ClientRouter fallback="swap" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{title ? `${title} — Alic Li` : 'Alic Li — ' + d.hero + ' ' + d.heroAccent}</title>
     <meta name="description" content={description || d.description} />
@@ -101,7 +103,11 @@ const nav = [
     <a href="#main" class="skip-link">
       {d.skip}
     </a>
-    <header class="header-wrap">
+    <header
+      class="header-wrap"
+      transition:name="site-navigation"
+      transition:animate="none"
+    >
       <div class="nav-shell glass">
         <a
           class="wordmark"
@@ -116,11 +122,13 @@ const nav = [
             label: d.nav[key],
             href: pathFor(lang, key === 'home' ? '' : key),
           }))}
+          transition:persist="navigation"
           selected={path.split('/')[0] || 'home'}
           label={d.menu}
           client:load
         />
         <Preferences
+          transition:persist="preferences"
           lang={lang}
           alternate={alternate}
           path={path === '404' ? '' : path}
@@ -128,10 +136,14 @@ const nav = [
         />
       </div>
     </header>
-    <main id="main">
+    <main id="main" transition:name="workspace" transition:animate="none">
       <slot />
     </main>
-    <footer class="site-footer">
+    <footer
+      class="site-footer"
+      transition:name="site-footer"
+      transition:animate="none"
+    >
       <a href={pathFor(lang)} class="wordmark">
         Alic Li's Blog
       </a>
@@ -144,5 +156,22 @@ const nav = [
         <span>© {new Date().getFullYear()}</span>
       </div>
     </footer>
+    <script>
+      import { slideDirection } from '../lib/navigation';
+      document.addEventListener('astro:before-preparation', (event) => {
+        document.documentElement.dataset.slide = slideDirection(
+          event.from,
+          event.to,
+          event.direction,
+        );
+      });
+      document.addEventListener('astro:before-swap', (event) => {
+        // Apply the existing theme before the new document is painted.
+        event.newDocument.documentElement.dataset.theme =
+          document.documentElement.dataset.theme;
+        event.newDocument.documentElement.dataset.slide =
+          document.documentElement.dataset.slide;
+      });
+    </script>
   </body>
 </html>
