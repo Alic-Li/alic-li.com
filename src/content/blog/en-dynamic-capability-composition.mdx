@@ -1,0 +1,759 @@
+---
+title: 'From State Tuning and MiSS to Dynamic State & Adapter Loading: Enchanting Model States and Weights at Inference Time'
+description: 'A bicycle-riding pelican, RWKV state tuning, MiSS adapters, and composing model capabilities dynamically at inference time.'
+date: 2026-09-19
+lang: en
+translationKey: dynamic-capability-composition
+tags: ['RWKV', 'State Tuning', 'MiSS', 'CUDA']
+---
+
+English translation of [my original article on Zhihu](https://zhuanlan.zhihu.com/p/2084593015339991309).
+
+**Stop stuffing prompts into models and scaling them up: Bo built you a bow 🏹. Your job is to swap arrows with State and enchant the bow with a MiSS Adapter. 🏹🤣**
+
+Recently, I've been doing something increasingly ridiculous.  
+I took **RWKV-7.2B**, attached a MiSS Adapter of only a few dozen MB, and fed it some HTML / SVG data I had put together.  
+And this is what it produced: **a pelican riding a bicycle.**
+
+![The unfortunate pelican. 🦤🚲](/images/blog/dynamic-capability-composition/pelican-bicycle.jpg)
+
+The unfortunate pelican. 🦤🚲
+
+![HTML / SVG generation result](/images/blog/dynamic-capability-composition/generation-result.jpg)
+
+> I stared at the screen for quite a while. **I started wondering whether I'd downloaded a bootleg RWKV.** Was I running the wrong model? **An adapter of around 36 MB had stuffed a whole pelican in there. 🤣**
+
+And let me emphasize: **this is only 7.2B.**
+
+But the pelican experiment was **never an SVG benchmark**. It was a deliberate overfit stress test. I constructed a small dataset that would be easy to overfit, first to check that the entire training → saving → loading → dynamic attachment → inference infrastructure was correct, and also to see how much complex, long-form structure such a small State / Adapter could actually memorize.
+
+My original expectations were fairly pessimistic: with HTML / SVG running to thousands of tokens, the model would probably start repeating itself, break tags, lose the structure, or simply drift during generation.
+
+**What surprised me most wasn't that it could draw a pelican. It was that a local parameter update of just a few dozen MB could reliably encode and reproduce such long, structurally fragile output. 🤣**
+
+As for genuine generalization, that's a question for the next set of experiments. I've also tried combinations outside the training examples, such as “Qin Shi Huang riding a polar bear.” The model could still generate relevant code, so it wasn't merely repeating the training text verbatim. The resulting SVG did get rather abstract 🤣, but it didn't loop, and the HTML still closed properly and rendered. Honestly, that alone made me pretty happy, haha.  
+More precisely, **it showed some transfer and compositional ability, but I had clearly overfit this MiSS pretty hard. A serious run with more data should work very well.** 😋
+
+The next thing genuinely worth testing is: **after attaching this State / Adapter, does the model's ability to do other things deteriorate, stay roughly unchanged, or actually improve?**  
+I couldn't be bothered to bring out the 13.3B model this time. Partly laziness, partly because its capabilities are already a bit overpowered. _Mostly, though, I don't have much compute, and writing the NCCL operators for my infrastructure has been giving me a headache. I'll stick to single-GPU training for now. (Runs away.)_
+
+What I really want to know is: **how far can a reasonably sized base model go with a very small local parameter update?**  
+Judging by the results so far… things are getting suspicious. 🤣
+
+---
+
+### I started wondering: why do we build a whole new model every time we add an ability?
+
+There's a very natural mindset in today's LLM ecosystem: the model isn't strong enough? **Scale up.** Not capable enough? Get a bigger one. Of course, I'm not saying scaling doesn't work. Brute force does get things done. Big models must be big ✋😭✋. Bigger is better 😭.  
+Then: poor results in a particular domain? Fine-tune a new model. Another business use case? Fine-tune another one. 🥲  
+Eventually your server's disk looks like this:
+
+```text
+model_final.pth
+model_final_v2.pth
+model_final_v2_fixed.pth
+model_final_really_final.pth
+model_final_this_time_really_final.pth
+```
+
+The classic experiment-directory junkyard. 🤣 (My disks do, in fact, look like this. 😇)
+
+A model's foundational capabilities, knowledge capacity, and reasoning ceiling certainly depend on the base model. RWKV has kept iterating on its pretraining data, and its base models have steadily improved. These days, running fast doesn't seem to earn you much, which is a little depressing. But the ones that keep running, even slowly, just refuse to die.
+
+But I increasingly feel that **not every capability upgrade is worth modifying the entire model. Many skills only need a perturbation of a few dozen MB—local in size, yet affecting parameters across the model.**
+
+If your faucet leaks, your first reaction shouldn't be: **blow up the building and rebuild it.** 🔨🤣
+
+So here's the question: **can we treat the model itself as a stable computational base, separate out individual capabilities, and compose them dynamically at runtime?**  
+In other words:
+
+```text
+Stable Base Model
+      +
+Runtime State
+      +
+Weight Adapter
+      =
+The model behavior actually used by this request
+```
+
+That's what I've been working on in `rwkv_lightning_cuda`. This isn't just another PEFT implementation.
+
+It's:
+
+## Dynamic State Loading + Dynamic MiSS Adapter Loading
+
+Or, to give it a flashier name:
+
+## Dynamic Capability Composition
+
+Composing capabilities dynamically.
+
+---
+
+## Layer one: don't rebuild the bow—learn to swap arrows first. 🏹
+
+RWKV has a feature I've always particularly liked:
+
+<strong>State</strong>
+
+Transformer servers spend their days building infrastructure around the KV cache. As a recurrent model, RWKV naturally has a recurrent state that passes forward through the computation. And this isn't just an abstract concept.
+
+Bo's official RWKV-7 CUDA implementation has a very explicit state-passing kernel:
+
+The forward pass takes `s0` and returns `sT` after processing a sequence; backward can propagate from `dsT` all the way back to `ds0`. In other words, **State is already a first-class object that can be explicitly passed into and out of the recurrent computation graph.**
+
+[Bo's RWKV-CUDA state-passing implementation](https://github.com/BlinkDL/RWKV-CUDA/tree/main/rwkv7_fast_fused/cuda)
+
+This matters, because it means:
+
+I don't necessarily have to change the model's parameters to change how it behaves on a task.
+
+I can first change:
+
+> The state from which the model enters the task.
+
+So my most intuitive understanding of State Tuning has never been:
+
+> “A smaller kind of LoRA.”
+
+Instead, it's:
+
+> Runtime-space adaptation.
+
+The model still uses the same weights.
+
+But:
+
+```text
+State A
+   ↓
+Same RWKV Weight
+   ↓
+Trajectory A
+```
+
+Swap the state:
+
+```text
+State B
+   ↓
+Same RWKV Weight
+   ↓
+Trajectory B
+```
+
+The same dynamical system. Different initial conditions. The model ends up following a different trajectory. So I now like to summarize it this way:
+
+> State determines “how the model enters the task.”
+
+At this point, half of my Minecraft theory can already make its entrance:
+
+Bo has built you a bow. 🏹
+
+What is State?
+
+The arrow.
+
+Today: 🏹 a translation arrow.  
+Tomorrow: 🏹 a tool-calling arrow.  
+The day after: 🏹 an HTML arrow.  
+And when you're bored out of your mind: 🏹 a pelican-riding-a-bicycle arrow. 🤣
+
+It's still the same bow. You're just changing the arrow.
+
+---
+
+## But then I realized: swapping arrows isn't enough
+
+State is great: cheap, small, and, as a recurrent state, naturally easy to move around at runtime. But the limitation is obvious too. Some abilities can't be fully addressed just by changing where the model starts. Sometimes I really do want to touch **the local mapping inside the linear layer itself**. That's when it's time to enchant the bow. 🤣 In other words: **an adapter**.
+
+---
+
+## Thanks to JL, the world's finest PEFT chef, for serving me a whole feast. 🍳
+
+I don't even want to call this guy a PEFT researcher anymore. I hereby declare him **the world's finest PEFT chef**. 👨‍🍳 A whole table of PEFT dishes: LoRA / NoRA / DiSHA / MiSS. 🤤
+
+After trying them all, I found that **MiSS was still my favorite dish**. 😋
+
+MiSS stands for **Matrix Shard Sharing**. One of the paper's central ideas is to construct parameter updates through shard sharing and a shared trainable matrix `D`, rather than LoRA's classic pair of matrices, `A + B`. Its efficient form, MiSSᵉ, further replaces input-side processing with blockwise aggregation. The paper's core comparison is direct: LoRA computes `ΔWx = B(Ax)`, while MiSSᵉ can be written as `ΔWx = DS`, where `S` is the block-aggregated input. ([arXiv](https://arxiv.org/abs/2409.15371))
+
+[JL's MiSS GitHub](https://github.com/Joluck/MiSS) · [MiSS paper: arXiv:2409.15371](https://arxiv.org/abs/2409.15371)
+
+Traditional LoRA looks roughly like this:
+
+```text
+x
+│
+├────────────── W₀x
+│
+└── A ── B ─── Δx
+```
+
+MiSSᵉ is more like:
+
+```text
+x
+│
+├────────────── W₀x
+│
+└── block sum ─ D ─ Δx
+```
+
+The paper's analysis of this single-matrix paradigm is also elegant. In its complexity model, LoRA has `O(r(k+d))` parameters, while MiSSᵉ has `O(rd)`. The input transformation also changes from the matrix multiplication `Ax` to a block sum. ([arXiv](https://arxiv.org/abs/2409.15371))
+
+This is exactly my kind of thing. My engineering taste is very simple. (Not because I'm lazy, or because adding too much stuff makes things buggy. Runs away.)
+
+> One fewer matrix whenever possible. One fewer GEMM whenever possible. A little less VRAM traffic whenever possible. Otherwise, I just end up writing more kernels and burning more tokens anyway. 😭
+
+So I ended up putting MiSS into my own `rwkv_lightning_cuda`.
+
+My implementation trains a compact `D` for each target linear layer while keeping the base weights frozen. Once trained, the adapter can be loaded dynamically per request, without modifying the shared base model in place. ([GitHub](https://github.com/Alic-Li/rwkv_lightning_cuda))
+
+Then things started getting fun. 😇
+
+---
+
+## State swaps the arrow; MiSS enchants the bow from within. 🏹✨🔮
+
+This is the real core of the whole idea. I'm increasingly reluctant to treat State Tuning and MiSS as:
+
+> Two competing forms of PEFT.
+
+Because they're not changing the same thing at all. Here's how I understand them now:
+
+> State determines “how the model enters the task.” An adapter determines “how the model processes the task at each layer.”
+
+In slightly more formal terms: **runtime-space adaptation + weight-space adaptation**.
+
+State:
+
+```text
+Changes the starting point / trajectory of recurrent dynamics
+```
+
+MiSS:
+
+```text
+Changes the local weight mapping at each layer
+```
+
+In other words:
+
+```text
+Same Base Model
+                         │
+          ┌──────────────┴──────────────┐
+          │                             │
+   Runtime-space                  Weight-space
+          │                             │
+        State                     MiSS Adapter
+          │                             │
+  Changes trajectory             Changes local mappings
+```
+
+These aren't completely overlapping degrees of freedom. Combining them therefore has the potential to be more expressive than either one alone.
+
+That's also why I'm increasingly fond of my Minecraft bow-and-enchantment theory. 🤣
+
+---
+
+### Officially introducing the Minecraft bow-and-enchantment theory. 🏹
+
+Base model = bow.
+
+Bo has already built the bow for you.
+
+```text
+RWKV-7.2B
+   🏹
+```
+
+State = arrow.
+
+```text
+[Translation arrow]
+[HTML arrow]
+[Tool-calling arrow]
+[Medical extraction arrow]
+```
+
+So what's MiSS? It isn't a little prompt note stuck to the arrow:
+
+> “Dear arrow, please fly a little more professionally today. ❤️” 🤣
+
+It actually changes the bow's local behavior. That's an enchantment, isn't it?
+
+```text
+RWKV Goose Bow 🪿
+
+Ammo:
+  HTML State 🏹
+
+Enchantments: 🔮
+  MiSS: SVG Generation IV
+  MiSS: Pelican Riding Bicycle V
+  Unbreaking III
+```
+
+So my way of thinking has become:
+
+> State swaps the arrow. An adapter enchants the bow. Dynamic loading means changing arrows and applying enchantments in the middle of the fight. 🤣
+
+---
+
+## This really is different from “dynamically loading a skill”
+
+The agent community talks a lot about skills too. But today, “skill” often brings to mind:
+
+```text
+Prompt
+System Prompt
+SKILL.md
+MCP
+Tool Description
+```
+
+These are all good things, of course. But what I'm working on this time is at a different level.
+
+A prompt is roughly saying:
+
+> “Please act as a professional SVG engineer.”
+
+My runtime is more like:
+
+> “No need to act. I'll just plug those parameters straight into you.” 🤣
+
+One negotiates with the model through natural language. The other goes directly inside it:
+
+```text
+Prompt Space
+     ↓
+“Tells the model what to do”
+
+Runtime Space
+     ↓
+State
+“Changes where the model starts running”
+
+Weight Space
+     ↓
+MiSS / Adapter
+“Changes how computation happens inside the model”
+```
+
+I'm not trying to get rid of prompts. Prompts will always be useful. It's just that:
+
+> For some abilities, I can't be bothered to negotiate with the model anymore. I'll just modify its brain. 🤣
+
+---
+
+## The interesting part isn't MiSS itself—it's composing it at inference time
+
+Once I got this far, I realized that MiSS itself wasn't actually the most interesting part. What really started to feel wild was this: **why must an adapter be fixed when the model starts?**
+
+Why can't we do this:
+
+```text
+Request A
+→ State A
+→ Adapter A
+→ Shared Base
+```
+
+Then the next request:
+
+```text
+Request B
+→ State B
+→ Adapter B
+→ Same Shared Base
+```
+
+And the one after that:
+
+```text
+Request C
+→ State C
+→ Adapter C
+→ Still Same Base
+```
+
+That leads to my current setup:
+
+## Dynamic State Loading + Dynamic MiSS Adapter Loading
+
+In `rwkv_lightning_cuda`, an uploaded State can be attached directly to a generation request through `state_id`. A MiSS Adapter can be selected at request admission with `adapter_id`, `adapter_version`, and `adapter_scale`. Registered adapters initially remain in CPU RAM. The complete adapter is uploaded to the GPU only on first use and then reused throughout prefill and decode, rather than being moved around at every layer or token. ([GitHub](https://github.com/Alic-Li/rwkv_lightning_cuda/blob/main/docs/http-api.md))  
+I even specifically handled one of the easiest things to get wrong:
+
+**States must not get mixed up.**
+
+A stateful session's identity now takes into account the base model's lifetime, adapter content version, scale, initial state, and WKV precision. If the combination doesn't match, an old State cannot simply be continued. ([GitHub](https://github.com/Alic-Li/rwkv_lightning_cuda/blob/main/docs/http-api.md)) Otherwise, today you have:
+
+```text
+HTML State + SVG Adapter
+```
+
+And tomorrow, midway through a run:
+
+```text
+Tool State + Function Adapter
+```
+
+Then the runtime says:
+
+> “Come on over. I've still got half a bowl of yesterday's pelican soup. Let me warm that up for you.”
+
+And then you're truly done for. 🤣
+
+---
+
+## So I now prefer to call it Capability Composition
+
+I used to think:
+
+```text
+Model = weights.pth
+```
+
+Now it's increasingly like:
+
+```text
+Model Behavior = Base + State + Adapter + Request Context
+```
+
+The key question isn't:
+
+> “Which model am I loading today?”
+
+It's:
+
+> “How am I composing this model today?”
+
+I think this is a significant shift. A 7.2B base doesn't necessarily have to represent just one model. It can instead be **a shared computational foundation**.
+
+On top of it, attach:
+
+```text
+State A State B State C ...
+MiSS A MiSS B MiSS C ...
+```
+
+Then the runtime assembles the combination for each request.
+
+That's what I mean by **Dynamic Capability Composition**. A capability no longer has to be one enormous weight blob. Capabilities can start becoming **composable objects**.
+
+---
+
+## All right, enough theory. Let me introduce this elegant work of art I've made. 🤣
+
+### `rwkv_lightning_cuda`
+
+This all started with me asking:
+
+> Why can't high-concurrency RWKV inference be faster? How do I relieve the HTTP service's CPU bottleneck? Can I make it easier for users to run?
+
+Then it gradually went off the rails. By now, it has become:
+
+A **pure C++ GPU runtime**.
+
+_No PyTorch serving dependency._  
+_A native CUDA path, plus native HIP kernels for AMD._  
+_An OpenAI-style API. SSE. State cache. W8A16 / W4A16 quantization._  
+_State tuning. MiSS training._  
+_Dynamic adapter serving._  
+_API cluster scheduling and routing._  
+_A Web UI and a Go binary launcher with a Node.js frontend._
+
+[rwkv_lightning_cuda](https://github.com/Alic-Li/rwkv_lightning_cuda)
+
+It looks less and less like:
+
+> A “model inference script.”
+
+And more like:
+
+> A model runtime designed specifically around recurrent models.
+
+I've even come up with a particularly obnoxious slogan:
+
+## <strong><em>Method is cheap, so try my binaries.</em></strong>🤣
+
+Here, have the binary. Try it yourself. If it's buggy or gives you trouble, please come yell at me in the issues. 🤣
+
+---
+
+## Why I dug PyTorch up by the roots. 😭
+
+First, a disclaimer: PyTorch is great. I use it for research experiments and algorithm validation too. I love using it, and it's fast. 😋 But… I don't really want ordinary users to complete the following cultivation quest just to start my inference server:
+
+```text
+Is the Python version right?
+Which Torch version?
+Which CUDA version was Torch built against?
+Which CUDA is installed on the system?
+What about gcc?
+And glibc?
+And Ninja?
+Why isn't there a wheel for this?
+Why did that extension blow up?
+```
+
+And most of all, fucking Microsoft Windows. Its friendliness toward this stuff is just awful. Even for this pure C++ inference project, my same-hardware, dual-boot A/B tests still showed Linux running substantially faster. 😅 Then the user asks:
+
+> “Bro, how do I run this?”
+
+Me:
+
+> “Reinstall your CUDA and PyTorch environment first.”
+
+User:
+
+> “I'll just use an API instead.” 😭
+
+Eventually I thought: forget it. If C++ can handle it, don't require a Python runtime. If a CUDA kernel can handle it, use a CUDA kernel directly. And in the end:
+
+> “Holy shit, where did PyTorch go?” 🤣
+
+The `rwkv_lightning_cuda` quick start now basically amounts to building it with CMake and starting the server directly from the binary.
+
+---
+
+## Then why not just build it inside llama.cpp?
+
+Because llama.cpp is excellent too. I respect its engineering quality. I love using it, and so do my customers. 🥰
+
+But I have two practical problems. First, my C++ isn't good enough to go fight those seasoned veterans every day. I'm a useless noob. 🤣 Second, much of what I want to experiment with is specifically for RWKV. Going to a huge, historically accumulated Transformer codebase and submitting endless PRs just for these features… I thought about it and decided to dig my own mine instead. 🤣 So I kept digging, and it kept growing, until:
+
+> “Wait, wasn't I just writing an inference demo?”
+
+And next to it, there's already a router, a quantizer, a trainer, a launcher, and a whole Web UI. Classic infrastructure getting out of hand. Like the PC-building forum joke: “Walk in with a 3,000-yuan budget, keep upgrading until it's 98,000, and bring home four Titans.” 🫪
+
+---
+
+## Adapters should be runtime assets too
+
+Same reasoning. I don't want:
+
+```text
+Start server ---> Load Adapter A ---> Restart ---> Load Adapter B ---> Restart ---> Load Adapter C
+```
+
+That's so 2023. I want 2077. 🤣 I'd rather have:
+
+```text
+Adapter Registry
+├── html
+├── tool
+├── translate
+├── medical
+└── pelican_bicycle
+```
+
+A request arrives:
+
+```text
+{
+  "model": "rwkv-7.2b",
+  "state": "html-vibe",
+  "adapter": "pelican-svg"
+}
+```
+
+Runtime:
+
+> “Oh, we're cycling today?”
+
+Click. Attach it. Next request:
+
+```text
+{
+  "model": "rwkv-7.2b",
+  "state": "tool-call",
+  "adapter": "function-call"
+}
+```
+
+Runtime:
+
+> “All right, the pelican's off duty.”
+
+🤣
+
+In my implementation, an adapter's first request triggers its GPU upload. Subsequent prefill / decode reuses the GPU-resident adapter, with metrics for RAM / GPU cache hits, misses, uploads, and H2D time. ([GitHub](https://github.com/Alic-Li/rwkv_lightning_cuda/blob/main/docs/http-api.md)) This is the PEFT serving I want. It isn't training a small file and happily abandoning it on a disk. It's actually turning:
+
+> PEFT into a runtime primitive.
+
+---
+
+## Why 36 MB made such a big impression on me this time
+
+It wasn't just:
+
+> “Wow, 36 MB is so small.”
+
+A small file alone isn't remarkable. That's what PEFT is for. What really struck me was **capability density**. With sufficiently targeted data, a small local weight update can visibly change a model's behavior on a particular class of tasks. So what interested me about the pelican demo wasn't the bird. It was this:
+
+> Low-cost local parameter updates may inject specialized skills far more efficiently than our intuition suggests.
+
+If that holds, a natural engineering direction is to move away from:
+
+```text
+Task A → Model A
+Task B → Model B
+Task C → Model C
+```
+
+And toward:
+
+```text
+State A + Adapter A
+            /
+Shared Base ─ State B + Adapter B
+            \
+             State C + Adapter C
+```
+
+One base. A collection of inexpensive little capability modules. A runtime to compose them. Now that's getting interesting.
+
+---
+
+## Of course, there isn't a Hogwarts hidden inside those 36 MB. 🪄
+
+I don't think a small adapter is some miracle cure. It can't do this:
+
+> “The base model doesn't understand calculus, but a 10 MB adapter suddenly makes it prove the Riemann hypothesis.” 🤣
+
+Adapters and States can inject, strengthen, and reorganize abilities, but they still depend on the base model's existing representational capacity.
+
+And **data quality still matters enormously**. “Trash in, trash out.” If your training set is garbage, MiSS can't turn it into an elixir.
+
+At best, it can produce concentrated garbage with high parameter efficiency. 😭
+
+There's also a more important question: how complementary are the degrees of freedom in State and adapters? For which tasks is:
+
+```text
+State only
+```
+
+Already enough? When is:
+
+```text
+MiSS only
+```
+
+A better fit? And when is:
+
+```text
+State + MiSS
+```
+
+Clearly stronger? That needs ablations, not guesses. Next, I'd like to systematically run:
+
+```text
+Base
+State only
+MiSS only
+State + MiSS
+```
+
+Rather than show one pelican and announce:
+
+> “AGI solved.” 🤣
+
+---
+
+## And once again: this is still only 7.2B
+
+This really has been a lot of fun. Of course, Bo's repository has larger RWKV models. But this time I deliberately started with 7.2B, because what I want to know isn't:
+
+> “Can it work if the base model is made enormous?”
+
+It's:
+
+> How far can a capable but not outrageous base model go with runtime-space + weight-space adaptation?
+
+So far: suspiciously far. 🤣 As for 13.3B… let's leave it there for now. One day, when I'm really bored, I'll give it the same treatment:
+
+```text
+State Arrow
++
+MiSS Enchantment
+```
+
+I'm afraid the pelican won't just ride a bicycle then. It'll start writing Three.js for me. 🤣
+
+---
+
+## Of course, I'm standing on the shoulders of giants
+
+I've had a great time writing this infrastructure, but credit definitely belongs where it's due.
+
+First, Bo.
+
+RWKV's recurrent architecture, and the elegant state-passing design in the official RWKV-7 CUDA implementation, make all these experiments possible. The official `s0 → sT` and `dsT → ds0` interfaces make State a genuinely transferable object in the computation chain. ([GitHub](https://github.com/BlinkDL/RWKV-CUDA/tree/main/rwkv7_fast_fused/cuda))
+
+Without a bow, I'd have nowhere to put the arrow. 🏹 Then there's Chef JL, who served a whole feast in the PEFT kitchen. MiSS ended up being my favorite. 🤣 From shard sharing to its efficient single-matrix implementation, MiSS is particularly well suited to someone as sensitive to FLOPs / VRAM as I am in this situation. ([GitHub](https://github.com/Joluck/MiSS))
+
+So:
+
+> I'm just standing on the shoulders of giants. The giants research the algorithms. I copy them enthusiastically—with citations—and stuff them into strange, entertaining CUDA binaries. 🤣
+
+Perfectly reasonable.
+
+---
+
+## Finally: I increasingly don't think of a “model” as a set of weights
+
+Before:
+
+```text
+Model = model.pth
+```
+
+Now:
+
+```text
+Base Weight
+                  │
+          ┌───────┴───────┐
+          │               │
+       State           Adapter
+          │               │
+   Runtime Space      Weight Space
+          │               │
+          └───────┬───────┘
+                  │
+               Request
+                  │
+                  ▼
+          Current Behavior
+```
+
+So I'm increasingly happy to think of the model as **a runtime**. Base weights are the foundation. State is programmable execution state. An adapter is a pluggable local weight modification. Prompts are still prompts. Sampling is still sampling. Together they form **the “model” actually running for this particular request, at this particular moment**.
+
+---
+
+When deploying a model, I used to think:
+
+> “Which model am I starting?”
+
+Now I prefer to ask:
+
+> “How am I going to compose this model?”
+
+That's why I've been enjoying working on:
+
+## Dynamic State Loading + Dynamic MiSS Adapter Loading
+
+I don't want to copy ten complete 7B models for ten specialized capabilities. I want **one sufficiently good bow**. Keep it up, Bo. 🥰 Need a different task? Swap the arrow. 🏹 Need a particular local ability? Add an enchantment. ✨
+
+Then the runtime assembles it all on demand. Keep writing prompts, of course. Keep scaling up, of course.
+
+But for some specialized abilities:
+
+> You don't need to rebuild a whole mountain every time. 🪨⛰️ If a few dozen MB plus a few hundred MB of cuBLAS libraries can solve it, don't swing around tens of GB. 🤣
+
+And, as always: **Method is cheap, so try my binaries. 🤣**
+
+**All the code is here:** [Alic-Li/rwkv_lightning_cuda](https://github.com/Alic-Li/rwkv_lightning_cuda)

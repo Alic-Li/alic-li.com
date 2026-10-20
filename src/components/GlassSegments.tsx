@@ -42,25 +42,29 @@ export default function GlassSegments({
     id: number;
     x: number;
     dragging: boolean;
+    pointerType: string;
     key: string;
   } | null>(null);
-  const suppressClick = useRef(false);
+  const suppressClickUntil = useRef(0);
+  const touchContextUntil = useRef(0);
   useEffect(() => {
     setActive(selected);
     setPressed(false);
     gesture.current = null;
-    suppressClick.current = false;
   }, [selected, items[0]?.href]);
 
   useEffect(() => {
-    const release = () => {
+    const release = (event: globalThis.PointerEvent) => {
+      if (gesture.current?.id === event.pointerId) cancel();
+    };
+    const blur = () => {
       if (gesture.current) cancel();
     };
     window.addEventListener('pointerup', release);
-    window.addEventListener('blur', release);
+    window.addEventListener('blur', blur);
     return () => {
       window.removeEventListener('pointerup', release);
-      window.removeEventListener('blur', release);
+      window.removeEventListener('blur', blur);
     };
   }, [selected, items.map((item) => item.href).join('|')]);
 
@@ -88,6 +92,7 @@ export default function GlassSegments({
   }
   function pointerDown(event: PointerEvent<HTMLElement>) {
     if (
+      gesture.current ||
       !event.isPrimary ||
       event.button !== 0 ||
       event.metaKey ||
@@ -96,7 +101,14 @@ export default function GlassSegments({
       event.altKey
     )
       return;
-    suppressClick.current = false;
+    suppressClickUntil.current = 0;
+    if (event.pointerType !== 'mouse') {
+      event.preventDefault();
+      touchContextUntil.current = performance.now() + 1500;
+    }
+    // Capture immediately: touch may otherwise be taken over by a native
+    // link preview or leave the original anchor before the drag threshold.
+    event.currentTarget.setPointerCapture(event.pointerId);
     setPressed(true);
     lens.current?.press(true);
     const link = (event.target as Element).closest('a');
@@ -104,21 +116,23 @@ export default function GlassSegments({
       link?.getAttribute('href') ??
         (items.find((item) => item.key === active) ?? items[0]).href,
     );
+    const pressedItem = items.find(
+      (item) => item.href === link?.getAttribute('href'),
+    );
     gesture.current = {
       id: event.pointerId,
       x: event.clientX,
       dragging: false,
-      key: selected,
+      pointerType: event.pointerType,
+      key: pressedItem?.key ?? selected,
     };
   }
   function pointerMove(event: PointerEvent<HTMLElement>) {
     const current = gesture.current;
     if (!current || current.id !== event.pointerId) return;
     if (!current.dragging && Math.abs(event.clientX - current.x) < 6) return;
-    if (!current.dragging) {
-      current.dragging = true;
-      event.currentTarget.setPointerCapture(event.pointerId);
-    }
+    current.dragging = true;
+    if (event.pointerType !== 'mouse') event.preventDefault();
     lens.current?.move(event.clientX);
     const links = Array.from(event.currentTarget.querySelectorAll('a'));
     const nearest = links.reduce(
@@ -138,25 +152,37 @@ export default function GlassSegments({
     gesture.current = null;
     setPressed(false);
     lens.current?.press(false);
-    if (!current.dragging) return;
-    suppressClick.current = true;
-    requestAnimationFrame(() => {
-      suppressClick.current = false;
-    });
+    // Pointer capture retargets the compatibility click to the nav. Commit
+    // taps and drags here, and suppress delayed mobile clicks across route swaps.
+    suppressClickUntil.current = performance.now() + 500;
+    if (current.pointerType !== 'mouse')
+      touchContextUntil.current = performance.now() + 1500;
+    if (event.currentTarget.hasPointerCapture(event.pointerId))
+      event.currentTarget.releasePointerCapture(event.pointerId);
     const rect = event.currentTarget.getBoundingClientRect();
-    if (event.clientY < rect.top - 24 || event.clientY > rect.bottom + 24) {
+    const outside = current.dragging
+      ? event.clientY < rect.top - 24 || event.clientY > rect.bottom + 24
+      : event.clientX < rect.left ||
+        event.clientX > rect.right ||
+        event.clientY < rect.top ||
+        event.clientY > rect.bottom;
+    if (outside) {
       setActive(selected);
       lens.current?.select(
         (items.find((item) => item.key === selected) ?? items[0]).href,
       );
     } else {
-      select(items.find((item) => item.key === current.key)!);
+      select(items.find((item) => item.key === current.key) ?? items[0]);
     }
-    if (event.currentTarget.hasPointerCapture(event.pointerId))
-      event.currentTarget.releasePointerCapture(event.pointerId);
   }
   function cancel() {
+    const current = gesture.current;
     gesture.current = null;
+    if (current) {
+      suppressClickUntil.current = performance.now() + 500;
+      if (root.current?.hasPointerCapture(current.id))
+        root.current.releasePointerCapture(current.id);
+    }
     setPressed(false);
     setActive(selected);
     lens.current?.press(false);
@@ -191,16 +217,30 @@ export default function GlassSegments({
       onPointerDown={pointerDown}
       onPointerMove={pointerMove}
       onPointerUp={pointerUp}
-      onPointerCancel={cancel}
-      onLostPointerCapture={() => {
-        if (gesture.current) cancel();
+      onPointerCancel={(event) => {
+        if (gesture.current?.id === event.pointerId) cancel();
+      }}
+      onLostPointerCapture={(event) => {
+        // Touch initially captures to the anchor; ignore its lost-capture
+        // event when ownership is transferred to the navigation container.
+        if (
+          event.target === event.currentTarget &&
+          gesture.current?.id === event.pointerId
+        )
+          cancel();
       }}
       onDragStart={(event) => event.preventDefault()}
+      onContextMenu={(event) => {
+        if (
+          gesture.current?.pointerType === 'touch' ||
+          performance.now() < touchContextUntil.current
+        )
+          event.preventDefault();
+      }}
       onClickCapture={(event) => {
-        if (suppressClick.current) {
+        if (performance.now() < suppressClickUntil.current) {
           event.preventDefault();
           event.stopPropagation();
-          suppressClick.current = false;
         }
       }}
     >

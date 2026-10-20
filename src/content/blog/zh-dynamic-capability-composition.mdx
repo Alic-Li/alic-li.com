@@ -1,0 +1,899 @@
+---
+title: '从 State Tuning、MiSS 到 Dynamic State & Adapter Loading：把能力直接在推理的时候动态附魔大模型的 State 与 Weight'
+description: '从一只骑自行车的鹈鹕出发，聊聊 RWKV 的 State Tuning、MiSS 和推理时的动态能力组合。'
+date: 2026-09-19
+lang: zh
+translationKey: dynamic-capability-composition
+tags: ['RWKV', 'State Tuning', 'MiSS', 'CUDA']
+---
+
+原文发表于[知乎](https://zhuanlan.zhihu.com/p/2084593015339991309)。
+
+<strong>
+  别再给模型塞 Prompt 和 Scale Up 了：Bo 给你造了一副弓🏹，你要做的是用 State
+  换箭，用 MiSS Adapter 附魔 🏹🤣
+</strong>
+
+最近我干了一件越来越邪门的事情。  
+我拿一个 <strong>RWKV-7.2B</strong>，给它挂了一个只有几十 MB 的 MiSS Adapter，然后喂了一些我自己整理的 HTML / SVG 数据。  
+最后它给我吐出了这个：<strong>一只骑自行车的鹈鹕。</strong>
+
+![受害者鹈鹕。🦤🚲](/images/blog/dynamic-capability-composition/pelican-bicycle.jpg)
+
+受害者鹈鹕。🦤🚲
+
+![HTML / SVG generation result](/images/blog/dynamic-capability-composition/generation-result.jpg)
+
+> 我盯着屏幕看了半天。<strong>我怀疑我下到盗版 RWKV 了。</strong>我是不是开错模型了，<strong>36MB 左右的 Adapter 直接把鹈鹕塞进去了。🤣</strong>
+
+而且先强调一下：<strong>这甚至只是 7.2B。</strong>
+
+不过这个鹈鹕实验从一开始就<strong>不是 SVG Benchmark</strong>，而是我故意做出来的一个 overfit stress test。我专门构造了一份很容易过拟合的小数据集，先拿它验证这套训练 → 保存 → 加载 → 动态挂载 → 推理的 Infra 到底是不是完整正确，同时也想看看这么小的 State / Adapter 究竟能“背”下多复杂的长结构内容。
+
+我原本的预期其实挺悲观：这种几千 token 的 HTML / SVG，模型大概率吐着吐着就开始复读、标签炸掉、结构漂移，或者直接 generation drift。
+
+<strong>
+  结果最让我意外的反而不是它“会画鹈鹕”，而是几十 MB
+  的局部参数更新，居然真的可以稳定承载并还原这种很长、结构又非常脆弱的复杂输出。🤣
+</strong>
+
+至于真正的泛化能力，那是下一组实验的问题。目前我也试过类似“秦始皇骑北极熊”这种偏离训练样本的组合：模型确实还能生成相关代码，说明不是完全只会逐字复读；但 SVG 结果已经开始抽象起来了🤣，不过居然没有复读HTML居然还能正常闭合渲染，我就觉得挺棒的的了哈哈  
+所以更准确地说，<strong>它表现出了一定的迁移/组合能力，但这个 MiSS 显然还是被我狠狠训过拟合了。之后做多点数据正儿八经来一发估计效果会非常好</strong>😋
+
+下一步真正值得测的是：<strong>挂上这个 State / Adapter 以后，模型做其他事情的能力到底是被破坏了、基本不变，还是反而有所提升。</strong>
+
+13.3B 那个我这次懒得搬出来了。一方面是真的懒，另一方面它本身能力已经有点超标了，<em>其实最主要的是孩子没多少算力，我那Infra NCCL算子写的头疼，暂且就先玩玩单卡训练(逃)。</em>
+
+我反而更想看看：<strong>一个没那么夸张的 Base Model，加上非常小的局部参数更新，到底能把能力边界推多远。</strong>  
+结果现在来看……事情开始变得非常不对劲。🤣
+
+---
+
+### 我突然开始怀疑：为什么每加一个能力，都要重新造一个模型？
+
+现在大模型生态里面，一个非常自然的思维方式是：模型不够强？<strong>Scale Up。</strong>能力不够？换个更大的。当然，我完全不是说 Scale Up 没用，这确实力大砖飞。大模型一定要大✋😭✋大就是好😭  
+然后捏，垂类效果不好？Fine-tune 一份新的。再来一个业务？再 Fine-tune 一份新的。🥲  
+最后服务器硬盘里面：
+
+```text
+model_final.pth
+model_final_v2.pth
+model_final_v2_fixed.pth
+model_final_really_final.pth
+model_final_这回真的是最终版.pth
+```
+
+经典炼丹房垃圾堆。🤣（事实上我的硬盘里面就是这样的😇）
+
+模型的基础能力、知识容量、推理上限，当然和 Base Model 有关系。这一点RWKV一直在不断地迭代预训练数据，基模的能力一直在稳步提升，现在看跑得快的没奖励反而还难绷，但是吧现在发现跑的慢一些的但是还在跑的就是死不掉
+
+但我越来越觉得：
+
+<strong>不是所有能力升级，都值得全量改模型。</strong>
+<strong>很多技能，本质上只需要一个几十 MB 的局部但是又是全局参数扰动。</strong>
+
+你家水龙头漏水，第一反应总不能是：<strong>把楼炸了重新盖。</strong>🔨🤣
+
+于是问题就来了：
+
+<strong>
+  能不能把大模型本身当成一个稳定的计算底座，然后把具体能力拆出来，在 Runtime
+  里面动态组合？
+</strong>
+也就是：
+
+```text
+Stable Base Model
+      +
+Runtime State
+      +
+Weight Adapter
+      =
+当前这个请求真正使用的模型行为
+```
+
+这就是我最近在 `rwkv_lightning_cuda` 里面折腾的东西。  
+不是简单搞个 PEFT。
+
+而是：
+
+## Dynamic State Loading + Dynamic MiSS Adapter Loading
+
+也可以换个更骚一点的名字：
+
+## Dynamic Capability Composition
+
+<strong>动态能力组合。</strong>
+
+---
+
+## 第一层：别重新造弓，先学会换箭 🏹
+
+RWKV 这东西有一个我一直非常喜欢的特性：
+
+<strong>State</strong>
+
+Transformer 服务器天天围着 KV Cache 搓基础设施。  
+RWKV 作为一个 recurrent model，本身就天然存在一个不断向前传递的 recurrent state。  
+而且这个东西不是抽象概念。
+
+Bo 官方的 RWKV-7 CUDA 实现里面就有非常直球的 `state passing` kernel：
+
+forward 吃进去 `s0`，跑完一段 sequence 后吐出 `sT`；backward 还能从 `dsT` 一路往回产生 `ds0`。换句话说，<strong>State 本来就是整个 recurrent computation graph 里面可以显式输入、显式输出的一等对象。</strong>
+
+[Bo 的 RWKV-CUDA state passing 实现](https://github.com/BlinkDL/RWKV-CUDA/tree/main/rwkv7_fast_fused/cuda)
+
+这件事情很重要。  
+因为它意味着：
+
+<strong>我不一定要改模型参数，才能改变模型执行任务时的行为。</strong>
+
+我可以先改：
+
+> <strong>模型从什么状态进入这个任务。</strong>
+
+所以我对 State Tuning 最直觉的理解一直不是：
+
+> “一种更小的 LoRA。”
+
+而是：
+
+> <strong>Runtime-space adaptation。</strong>
+
+模型还是那套 Weight。
+
+但是：
+
+```text
+State A
+   ↓
+Same RWKV Weight
+   ↓
+Trajectory A
+```
+
+换一个：
+
+```text
+State B
+   ↓
+Same RWKV Weight
+   ↓
+Trajectory B
+```
+
+同一套动力系统。不同初始条件。最后模型进入的运行轨迹就不一样。  
+所以我现在喜欢用一句话概括：
+
+> <strong>State 决定模型“怎么进入这个任务”。</strong>
+
+这时候 Minecraft 理论已经可以登场一半了：
+
+<strong>
+  <em>Bo 已经给你造好了一把弓。🏹</em>
+</strong>
+
+<strong>
+  <em>State</em>
+</strong>
+是什么？
+
+<strong>
+  <em>箭。</em>
+</strong>
+
+今天：🏹 翻译箭  
+明天：🏹 Tool Calling 箭  
+后天：🏹 HTML 箭  
+哪天闲得蛋疼：🏹 鹈鹕骑自行车箭🤣
+
+弓还是那把弓。你只是换了箭。
+
+---
+
+## 但是后来我发现：光换箭还不够
+
+State 很爽。因为便宜。小。而且作为 recurrent state，本身就特别适合在 Runtime 里面搬来搬去。
+
+<strong>但问题也很明显：</strong>
+有些能力并不是：
+<strong>
+  <em>“模型从哪里开始跑”</em>
+</strong>
+就能完全解决的。 有时候我确实想直接去碰：
+<strong>Linear Layer 本身的局部映射。</strong>
+那这时候就该给弓上附魔了。🤣 也就是 <strong>Adapter</strong>
+
+---
+
+## 感谢地表最强 PEFT 厨师长 JL 给我做了一桌菜 🍳
+
+这哥们我现在已经不想叫他 PEFT Researcher 了。我愿称之为：地表最强 PEFT 厨师长 👨‍🍳  
+各种 PEFT 菜系端上来一桌。LoRA / NoRA / DiSHA / MiSS 🤤
+
+最后我吃了一圈：<strong>我发现我还是最喜欢 MiSS 这道菜。😋</strong>
+
+MiSS 全称 <strong>Matrix Shard Sharing</strong>。论文的核心思路之一，是不用 LoRA 经典的 `A + B` 两个矩阵，而是利用 shard sharing 和一个共享可训练矩阵 `D` 来构造参数更新；其高效形式 MiSSᵉ 进一步把输入侧处理变成 blockwise aggregation。论文给出的核心对比非常直接：LoRA 是 `ΔWx = B(Ax)`，MiSSᵉ 则可以写成 `ΔWx = DS`，其中 `S` 是按块聚合后的输入。([arXiv](https://arxiv.org/abs/2409.15371))
+
+[JL 的 MiSS GitHub](https://github.com/Joluck/MiSS) [MiSS 论文：arXiv:2409.15371](https://arxiv.org/abs/2409.15371)
+
+传统 LoRA 大概是：
+
+```text
+x
+│
+├────────────── W₀x
+│
+└── A ── B ─── Δx
+```
+
+MiSSᵉ 更像：
+
+```text
+x
+│
+├────────────── W₀x
+│
+└── block sum ─ D ─ Δx
+```
+
+而论文里对这种 single-matrix paradigm 的分析也很漂亮：在其给出的复杂度模型中，LoRA 参数量为 `O(r(k+d))`，MiSSᵉ 则是 `O(rd)`；输入变换阶段也从 `Ax` 的矩阵乘变成 block sum。([arXiv](https://arxiv.org/html/2409.15371v12))
+
+这就非常对我的胃口了。因为我这个人做东西有一个很朴素的审美  
+（不是因为懒也不是因为东西加太多容易Buggy，（逃
+
+> <strong>能少一个 Matrix 就少一个。</strong>
+> <strong>能少一次 GEMM 就少一次。</strong>
+> <strong>能少搬一点显存就少搬一点。</strong>
+> 毕竟最后还不是得多写 Kernel多烧Token 😭
+
+所以我最后把 MiSS 塞进了自己的 `rwkv_lightning_cuda`。
+
+现在我的实现是每个目标 Linear 训练一个紧凑的 `D`，Base Weight 保持冻结；训完以后 Adapter 可以在请求级动态加载，而共享 Base Model 不需要被原地改掉。([GitHub](https://github.com/Alic-Li/rwkv_lightning_cuda))
+
+然后事情就开始变得好玩了😇
+
+---
+
+## State 是换箭，MiSS 是给弓渗透性附魔 🏹✨🔮
+
+这里就是整篇想法真正的核心。  
+我越来越不愿意把 State Tuning 和 MiSS 当成：
+
+> 两种互相竞争的 PEFT。
+
+因为它们根本没在改同一个东西。  
+我现在对它们的理解是：
+
+> <strong>State 决定模型“怎么进入这个任务”。</strong>
+> <strong>Adapter 决定模型“在每一层怎么处理这个任务”。</strong>
+
+换成稍微正经一点的术语：<strong><em>Runtime-space adaptation + Weight-space adaptation</em></strong>
+
+<strong>State</strong>：
+
+```text
+改变 recurrent dynamics 的起点 / 轨迹
+```
+
+<strong>MiSS</strong>：
+
+```text
+改变每一层局部 Weight Mapping
+```
+
+也就是说：
+
+```text
+Same Base Model
+                       │
+        ┌──────────────┴──────────────┐
+        │                             │
+Runtime-space                    Weight-space
+        │                             │
+      State                     MiSS Adapter
+        │                             │
+   改运行轨迹                     改局部映射
+```
+
+它们不是完全重叠的自由度。所以叠起来的时候，就有机会比只用其中一边更有表达力。
+
+这也是我为什么越来越喜欢 Minecraft 弓箭附魔理论。🤣
+
+---
+
+### Minecraft 弓箭附魔学说正式发表 🏹
+
+<strong>Base Model = 弓。</strong>
+
+Bo 给你把弓造好了。
+
+```text
+RWKV-7.2B
+   🏹
+```
+
+<strong>State = 箭。</strong>
+
+```text
+[翻译箭]
+[HTML 箭]
+[Tool Calling 箭]
+[医疗抽取箭]
+```
+
+然后 MiSS 是什么？  
+不是给箭贴一张 Prompt 小纸条：
+
+> “亲爱的箭，请你今天飞得专业一点❤️” 🤣
+
+而是真的把弓的局部行为改掉。那不就是<strong>附魔</strong>嘛
+
+```text
+RWKV Goose Bow 🪿
+
+Ammo:
+  HTML State 🏹
+
+Enchantments: 🔮
+  MiSS: SVG Generation IV
+  MiSS: Pelican Riding Bicycle V
+  Unbreaking III
+```
+
+于是我现在的思维方式已经变成：
+
+> <strong>State 是换箭。</strong>
+> <strong>Adapter 是给弓附魔。</strong>
+> <strong>Dynamic Loading 就是在战斗过程中现场换箭、现场附魔。🤣</strong>
+
+---
+
+## 这和“动态加载 Skill”还真不太一样
+
+现在 Agent 圈也很喜欢讲 Skill。但是“Skill”这个词今天很容易让人联想到：
+
+```text
+Prompt
+System Prompt
+SKILL.md
+MCP
+Tool Description
+```
+
+这些东西当然都很好。但我这次想折腾的是另外一个层级。
+
+Prompt 大概是在说：
+
+> “请你现在扮演一个专业 SVG 工程师。”
+
+我的 Runtime 更像：
+
+> <strong>“不用扮演，我直接把那部分参数给你插上了。”</strong>🤣
+
+<strong>一个是在自然语言层面跟模型商量。一个是直接绕到模型内部：</strong>
+
+```text
+Prompt Space
+     ↓
+“告诉模型应该怎么做”
+
+Runtime Space
+     ↓
+State
+“改变模型从哪里开始运行”
+
+Weight Space
+     ↓
+MiSS / Adapter
+“改变模型内部怎么算”
+```
+
+我并不是要把 Prompt 干掉。Prompt 永远很好用。  
+只是：
+
+> <strong>有些能力我已经懒得跟模型商量了。</strong>
+> <strong>直接改它脑子。🤣</strong>
+
+---
+
+## 真正有意思的不是 MiSS，而是推理的时候组合它
+
+做到这里以后，我突然发现：  
+MiSS 本身反而不是最有意思的部分。
+
+真正让我觉得开始邪门的是：
+
+<strong>为什么 Adapter 一定要在启动模型的时候固定？</strong>
+
+为什么不能：
+
+```text
+Request A
+→ State A
+→ Adapter A
+→ Shared Base
+```
+
+下一个请求：
+
+```text
+Request B
+→ State B
+→ Adapter B
+→ Same Shared Base
+```
+
+再下一个：
+
+```text
+Request C
+→ State C
+→ Adapter C
+→ Still Same Base
+```
+
+于是就有了我现在这套：
+
+## Dynamic State Loading + Dynamic MiSS Adapter Loading
+
+在 `rwkv_lightning_cuda` 里面，上传后的 State 可以通过 `state_id` 直接绑定到生成请求；MiSS Adapter 则可以通过 `adapter_id`、`adapter_version`、`adapter_scale` 在 request admission 时选择。Adapter 注册时先留在 CPU RAM，第一次真正使用时才整包上传 GPU，prefill 和 decode 会继续复用，而不是每层、每 token 来回搬。([GitHub](https://github.com/Alic-Li/rwkv_lightning_cuda/blob/main/docs/http-api.md))  
+甚至我还专门处理了最容易翻车的地方：
+
+<strong>State 不能串味。</strong>
+
+Stateful session 的 identity 里面现在会考虑 Base Model lifetime、Adapter content version、scale、initial state 和 WKV precision；组合对不上，就不能拿一个旧 State 硬续。([GitHub](https://github.com/Alic-Li/rwkv_lightning_cuda/blob/main/docs/http-api.md))  
+不然今天：
+
+```text
+HTML State + SVG Adapter
+```
+
+跑着跑着第二天：
+
+```text
+Tool State + Function Adapter
+```
+
+结果 Runtime：
+
+> “来来来，这里还有昨天剩下半碗鹈鹕汤，我给你热一下。”
+
+那就真的完蛋了。🤣
+
+---
+
+## 所以我现在更愿意把它叫 Capability Composition
+
+以前我的脑子里面是：
+
+```text
+Model = weights.pth
+```
+
+现在越来越像：
+
+```text
+Model Behavior = Base + State + Adapter + Request Context
+```
+
+重点不是：
+
+> “我今天加载哪个模型？”
+
+而是：
+
+> <strong>“我今天怎么组合这个模型？”</strong>
+
+这个变化我觉得挺大的。因为这样的话：  
+一个 7.2B Base 并不一定只能代表“一只模型”。  
+它可以更像：<strong>一个共享的计算底座。</strong>
+
+上面挂：
+
+```text
+State A State B State C ...
+MiSS A MiSS B MiSS C ...
+```
+
+然后 Runtime 根据请求现场组装。
+
+这就是我说的：<strong>Dynamic Capability Composition</strong>  
+能力不再必须是一整块巨大的 <strong>Weight Blob。</strong>  
+能力可以开始变成：<strong>Composable Objects。</strong>
+
+---
+
+## 好了，道理讲完了，现在介绍一下我这坨优雅的艺术品 🤣
+
+### `rwkv_lightning_cuda`
+
+这玩意最开始只是我想：
+
+> RWKV 高并发推理为什么不能再快一点  
+> HTTP service CPU bottle neck咋缓解一下  
+> 用户的易用性能不能再高一些？
+
+然后慢慢就走歪了。  
+走到现在，它已经变成一套：
+
+<strong>Pure C++ GPU Runtime。</strong>
+
+<em>没有 PyTorch serving dependency。</em>
+<em>CUDA 原生路径。AMD 也有 HIP Native kernel path。</em>
+<em>OpenAI-style API。SSE。State Cache。W8A16 / W4A16 Quantization。</em>
+<em>State Tuning。MiSS Training。</em>
+<em>Dynamic Adapter Serving。</em>
+<em>API Cluster scheduling routingRouter。</em>
+<em>Web UI Go binary Launcher with node.js fronted。</em>
+
+[rwkv_lightning_cuda](https://github.com/Alic-Li/rwkv_lightning_cuda)
+
+现在它已经越来越不像：
+
+> 一个“模型推理脚本”。
+
+更像一个：
+
+> <strong>专门围绕 recurrent model 设计的 Model Runtime。</strong>
+
+我甚至已经给自己总结出了一句非常欠打的话：
+
+## <strong><em>Method is cheap, so try my binaries.</em></strong>🤣
+
+来，binary 给你。你自己玩一下，如果buggy或者用起来有问题一定要来Issue区来骂我。🤣
+
+---
+
+## 为什么我要把 PyTorch 的祖坟都掘了 😭
+
+这里先声明：<strong>PyTorch 非常好。</strong>  
+我平时做研究实验、验证算法当然也用。孩子非常爱用，性能也强的😋  
+但问题在于……  
+我不太想让一个普通用户为了启动我的推理 Server，先完成下面的修仙任务：
+
+```text
+Python 版本对不对？
+Torch 哪个版本？
+Torch 编的是哪个 CUDA？
+系统 CUDA 又是哪版？
+gcc 呢？
+glibc 呢？
+Ninja 呢？
+这个 wheel 为什么没有？
+那个 extension 为什么炸了？
+```
+
+还有最重要的是Fucking Microsoft Windows他简直对于这些东西的友好性简直依托，而且甚至是纯CPP的项目我这个推理都比同硬件下的双系统AB测试后发现还是Linux快上一大截😅  
+然后用户：
+
+> 哥，怎么跑？
+
+我：
+
+> 你先把 CUDA和Pytorch环境 重装一下。
+
+用户：
+
+> 我还是用 API 吧。😭
+
+所以我后来想了想：<strong>算了</strong>。  
+能 C++ 解决的不要 Python runtime。能 CUDA Kernel 干掉的就直接 CUDA Kernel。  
+到最后发现：
+
+> <strong>woc，PyTorch 怎么没了。🤣</strong>
+
+现在 `rwkv_lightning_cuda` 的 Quick Start 基本就是 CMake 编出来，然后直接拿 binary 启 Server
+
+---
+
+## 那为什么不直接去 llama.cpp 里面搓？
+
+因为 llama.cpp 也是绝世好活。这个项目的工程质量我是服气的。孩子非常爱用，客户也爱用🥰
+
+但我有两个现实问题。  
+第一：<strong>我 C++ 水平还没有过硬到天天跑过去和那帮老登打架。我是废物加菜鸡弱智🤣</strong>  
+第二：<strong>我想要玩的很多东西本来就是 RWKV 特供：</strong>  
+让我为了这些东西跑去一座 Transformer Base 的历史石山上面疯狂提 PR……  
+我寻思了一下。<strong>不如自己挖矿。🤣</strong>  
+于是越挖越大。挖到现在：
+
+> “等一下，我不是来写一个推理 Demo 的吗？”
+
+然后旁边已经摆着 Router、Quantizer、Trainer、Launcher 和一套 WebUI 了。  
+经典基础设施失控现场。就像图吧转卡吧那样：
+
+<em>
+  <strong>三千预算进卡吧，加钱加到九万八，四路泰坦抱回家</strong>
+</em>
+🫪
+
+---
+
+## Adapter 也应该是 Runtime Asset
+
+同样的道理。我不想：
+
+```text
+启动 Server ---> 加载 Adapter A ---> 重启 ---> 加载 Adapter B ---> 重启---> 加载 Adapter C
+```
+
+这也太 2023 了，我要2077 🤣  
+我更希望：
+
+```text
+Adapter Registry
+├── html
+├── tool
+├── translate
+├── medical
+└── pelican_bicycle
+```
+
+Request 来了：
+
+```text
+{
+  "model": "rwkv-7.2b",
+  "state": "html-vibe",
+  "adapter": "pelican-svg"
+}
+```
+
+Runtime：
+
+> “哦，今天要骑车是吧。”
+
+啪。挂上。下一个：
+
+```text
+{
+  "model": "rwkv-7.2b",
+  "state": "tool-call",
+  "adapter": "function-call"
+}
+```
+
+Runtime：
+
+> “行，鹈鹕下班。”
+
+🤣
+
+我的实现现在 Adapter 第一次 request 才触发 GPU upload，后续 prefill / decode 复用 GPU resident adapter，并且有 RAM/GPU cache hit、miss、upload、H2D 时间等指标可以看。([GitHub](https://github.com/Alic-Li/rwkv_lightning_cuda/blob/main/src/miss/README.md))  
+这才是我想要的 PEFT serving。
+
+<strong>不是训完一个小文件，然后高兴地把它丢在硬盘里面。</strong>
+而是真的把：
+
+> <strong>PEFT 变成 Runtime 原语。</strong>
+
+---
+
+## 这次为什么 36MB 给我的震撼这么大
+
+其实不是因为：
+
+> “哇，36MB 好小。”
+
+单纯文件小并不稀奇。PEFT 本来就是干这个的。真正让我觉得邪门的是：
+
+<strong>能力密度。</strong>
+在足够针对性的数据里面，一个很小的局部 Weight
+Update，可以明显改变模型在某一类任务上的行为。 所以那个鹈鹕 Demo
+真正让我在意的不是鸟。 而是：
+
+> <strong>
+>   局部低成本参数更新，对专一技能的注入效率，可能比我们的直觉高得多。
+> </strong>
+
+如果这个判断成立，那么一个很自然的工程方向就是：  
+不要：
+
+```text
+Task A → Model A
+Task B → Model B
+Task C → Model C
+```
+
+而是：
+
+```text
+State A + Adapter A
+            /
+Shared Base ─ State B + Adapter B
+            \
+             State C + Adapter C
+```
+
+<em>
+  <strong>
+    一个 Base。一堆很便宜的小能力模块。Runtime 帮你组合。这就开始有点意思了。
+  </strong>
+</em>
+
+---
+
+## 当然，36MB 里面也没有霍格沃茨 🪄
+
+我不觉得小 Adapter 是什么万能灵药。  
+它不可能：
+
+> Base 完全不会微积分，你拿 10MB Adapter 就让它突然证明黎曼猜想。🤣
+
+Adapter 和 State 能注入、强化、重组织能力，但它们仍然建立在 Base Model 原有表示能力之上。
+
+而且：
+
+<strong>数据质量仍然非常重要。“Trash in trash out”</strong>
+如果你的训练集里面全是垃圾：MiSS 也不能把垃圾炼成仙丹。
+
+最多：
+
+<strong>高参数效率地炼出浓缩垃圾。😭</strong>
+
+还有一个更重要的问题：State 和 Adapter 的自由度到底有多互补？  
+在什么任务上：
+
+```text
+State only
+```
+
+已经够了？什么时候：
+
+```text
+MiSS only
+```
+
+更适合？什么时候：
+
+```text
+State + MiSS
+```
+
+会明显更强？  
+这个得靠 ablation 来说话。我接下来也比较想系统跑：
+
+```text
+Base
+State only
+MiSS only
+State + MiSS
+```
+
+而不是只放一只鹈鹕然后宣布：
+
+> <strong>AGI 已解决。</strong>🤣
+
+---
+
+## 另外再强调一次：这还只是 7.2B
+
+这个真的挺让玩的我开心的。  
+Bo的仓库里头当然还有更大的 RWKV。  
+但这轮我就是故意先拿 7.2B 玩。因为我更想知道的不是：
+
+> “把 Base 做得特别大以后能不能做出来。”
+
+而是：
+
+> <strong>
+>   一个能力还不错但没那么夸张的 Base，在这种 Runtime-space + Weight-space
+>   adaptation 下到底能走多远？
+> </strong>
+
+目前感觉：<strong>有点邪门。</strong>🤣  
+至于 13.3B…… 先放着吧。  
+哪天真的闲得发慌，再给那玩意也来一发：
+
+```text
+State Arrow
++
+MiSS Enchantment
+```
+
+我怕到时候鹈鹕不仅会骑自行车：
+
+<strong>它开始给我写 Three.js 了。🤣</strong>
+
+---
+
+## 当然，孩子是站在巨人的肩膀上的
+
+这套东西我自己写 Infra 写得很开心，但该感谢的人肯定还是要感谢。
+
+首先是 <strong>Bo</strong>。
+
+RWKV 本身这套 recurrent architecture，以及 RWKV-7 官方 CUDA 里面非常漂亮的 state passing 思路，是后面这些玩法成立的基础。官方实现里 `s0 → sT`、`dsT → ds0` 的接口把 State 真正做成了计算链里可以被传递的对象。([GitHub](https://github.com/BlinkDL/RWKV-CUDA/blob/main/rwkv7_fast_fused/cuda/rwkv7_statepassing_clampw.cpp))
+
+没有弓我也没地方搭箭。🏹  
+然后是 <strong>JL 厨师长</strong>。  
+给整个 PEFT 厨房端了一桌菜。  
+最后我最喜欢 MiSS 这一道。🤣  
+MiSS 从 shard sharing 到 efficient single-matrix implementation，本身就特别适合我这种情况下对 flops/vram 异常敏感的人。([GitHub](https://github.com/Joluck/MiSS))
+
+所以：
+
+> <strong>孩子就是站在巨人的肩膀上。</strong>
+> 巨人负责研究算法。 我负责狠狠的抄过来顺便cite一下，然后把把算法塞进奇怪好玩的
+> CUDA binary 里面。🤣
+
+非常合理。
+
+---
+
+## 最后：我越来越不把“模型”看成一份 Weight 了
+
+以前：
+
+```text
+Model = model.pth
+```
+
+现在：
+
+```text
+Base Weight
+                  │
+          ┌───────┴───────┐
+          │               │
+       State           Adapter
+          │               │
+   Runtime Space      Weight Space
+          │               │
+          └───────┬───────┘
+                  │
+               Request
+                  │
+                  ▼
+          Current Behavior
+```
+
+所以我现在越来越愿意把模型理解成：
+
+<strong>一个 Runtime。</strong>
+<strong>
+  <em>
+    Base Weight 只是底座。State 是可编程的运行状态。Adapter 是可插拔的局部
+    Weight Modification。
+  </em>
+</strong>
+Prompt 还是 Prompt。Sampling 还是 Sampling。 最终它们共同组成：
+<strong>这个请求此刻真正运行的“模型”。</strong>
+
+---
+
+以前部署模型的时候，我想的是：
+
+> <strong>“我要启动哪一个模型？”</strong>
+
+现在我更喜欢问：
+
+> <strong>“我要怎么组合这个模型？”</strong>
+
+这就是我为什么最近这么喜欢折腾：
+
+## Dynamic State Loading + Dynamic MiSS Adapter Loading
+
+我不想为了十种垂类能力复制十个完整的 7B。
+
+我想要：<strong>一把足够好的弓。Bo请加油喔🥰</strong>  
+需要什么任务：<strong>换箭。🏹</strong>  
+需要什么局部能力：<strong>附魔。✨</strong>
+
+然后 Runtime 帮我把这些东西现场装起来。Prompt 当然继续写。Scale Up 当然继续 Scale。
+
+但对于一些专一能力：
+
+> <strong>没必要每次都重新造一座山。🪨⛰️</strong>
+> <strong>几十 MB 加几百MB的cublas lib能解决的问题，就别抡几十 GB。🤣</strong>
+
+最后还是那句话：
+
+<em>
+  <strong>Method is cheap, so try my binaries.</strong>
+</em>
+🤣
+
+<strong>代码都放在这了。</strong>
+[Alic-Li/rwkv_lightning_cuda](https://github.com/Alic-Li/rwkv_lightning_cuda)
