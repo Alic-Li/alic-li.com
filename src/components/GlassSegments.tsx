@@ -5,7 +5,7 @@ import {
   type MouseEvent,
   type PointerEvent,
 } from 'react';
-import { motion, useReducedMotion } from 'motion/react';
+import { createGlassLens } from '../lib/glass-lens';
 import { navigate } from 'astro:transitions/client';
 
 type Segment = { key: string; label: string; href: string; lang?: string };
@@ -22,7 +22,22 @@ export default function GlassSegments({
   compact?: boolean;
 }) {
   const [active, setActive] = useState(selected);
-  const reduced = useReducedMotion();
+  const [pressed, setPressed] = useState(false);
+  const root = useRef<HTMLElement>(null);
+  const canvas = useRef<HTMLCanvasElement>(null);
+  const lens = useRef<ReturnType<typeof createGlassLens>>(null);
+  useEffect(() => {
+    if (!root.current || !canvas.current) return;
+    lens.current = createGlassLens(root.current, canvas.current);
+    return () => {
+      lens.current?.destroy();
+      lens.current = null;
+    };
+  }, [items.map((item) => `${item.key}:${item.label}`).join('|')]);
+  useEffect(() => {
+    const item = items.find((item) => item.key === selected);
+    if (item) lens.current?.select(item.href);
+  }, [selected, items.map((item) => item.href).join('|')]);
   const gesture = useRef<{
     id: number;
     x: number;
@@ -32,9 +47,22 @@ export default function GlassSegments({
   const suppressClick = useRef(false);
   useEffect(() => {
     setActive(selected);
+    setPressed(false);
     gesture.current = null;
     suppressClick.current = false;
   }, [selected, items[0]?.href]);
+
+  useEffect(() => {
+    const release = () => {
+      if (gesture.current) cancel();
+    };
+    window.addEventListener('pointerup', release);
+    window.addEventListener('blur', release);
+    return () => {
+      window.removeEventListener('pointerup', release);
+      window.removeEventListener('blur', release);
+    };
+  }, [selected, items.map((item) => item.href).join('|')]);
 
   function select(item: Segment) {
     if (compact) {
@@ -43,6 +71,7 @@ export default function GlassSegments({
       } catch {}
     }
     setActive(item.key);
+    lens.current?.select(item.href);
     if (item.key !== selected) void navigate(item.href);
   }
   function click(event: MouseEvent<HTMLAnchorElement>, item: Segment) {
@@ -68,6 +97,13 @@ export default function GlassSegments({
     )
       return;
     suppressClick.current = false;
+    setPressed(true);
+    lens.current?.press(true);
+    const link = (event.target as Element).closest('a');
+    lens.current?.select(
+      link?.getAttribute('href') ??
+        (items.find((item) => item.key === active) ?? items[0]).href,
+    );
     gesture.current = {
       id: event.pointerId,
       x: event.clientX,
@@ -83,6 +119,7 @@ export default function GlassSegments({
       current.dragging = true;
       event.currentTarget.setPointerCapture(event.pointerId);
     }
+    lens.current?.move(event.clientX);
     const links = Array.from(event.currentTarget.querySelectorAll('a'));
     const nearest = links.reduce(
       (best, link, index) => {
@@ -99,6 +136,8 @@ export default function GlassSegments({
     const current = gesture.current;
     if (!current || current.id !== event.pointerId) return;
     gesture.current = null;
+    setPressed(false);
+    lens.current?.press(false);
     if (!current.dragging) return;
     suppressClick.current = true;
     requestAnimationFrame(() => {
@@ -107,6 +146,9 @@ export default function GlassSegments({
     const rect = event.currentTarget.getBoundingClientRect();
     if (event.clientY < rect.top - 24 || event.clientY > rect.bottom + 24) {
       setActive(selected);
+      lens.current?.select(
+        (items.find((item) => item.key === selected) ?? items[0]).href,
+      );
     } else {
       select(items.find((item) => item.key === current.key)!);
     }
@@ -115,12 +157,37 @@ export default function GlassSegments({
   }
   function cancel() {
     gesture.current = null;
+    setPressed(false);
     setActive(selected);
+    lens.current?.press(false);
+    lens.current?.select(
+      (items.find((item) => item.key === selected) ?? items[0]).href,
+    );
   }
   return (
     <nav
+      ref={root}
       className={`glass-segments glass ${compact ? 'language-segments' : 'navigation-segments'}`}
       aria-label={label}
+      data-pressed={pressed || undefined}
+      onScroll={() => lens.current?.refresh()}
+      onKeyDown={(event) => {
+        const index = items.findIndex((item) => item.key === active);
+        const next =
+          event.key === 'ArrowRight'
+            ? Math.min(items.length - 1, index + 1)
+            : event.key === 'ArrowLeft'
+              ? Math.max(0, index - 1)
+              : event.key === 'Home'
+                ? 0
+                : event.key === 'End'
+                  ? items.length - 1
+                  : -1;
+        if (next < 0) return;
+        event.preventDefault();
+        root.current?.querySelectorAll('a')[next]?.focus();
+        select(items[next]);
+      }}
       onPointerDown={pointerDown}
       onPointerMove={pointerMove}
       onPointerUp={pointerUp}
@@ -137,10 +204,12 @@ export default function GlassSegments({
         }
       }}
     >
+      <canvas ref={canvas} className="glass-lens" aria-hidden="true" />
       {items.map((item) => (
         <a
           key={item.key}
           href={item.href}
+          aria-label={item.label}
           lang={item.lang}
           draggable={false}
           aria-current={selected === item.key ? 'page' : undefined}
@@ -148,15 +217,7 @@ export default function GlassSegments({
           onClick={(event) => click(event, item)}
         >
           {active === item.key && (
-            <motion.span
-              className="glass-indicator"
-              layoutId={compact ? 'language-glass' : 'navigation-glass'}
-              transition={
-                reduced
-                  ? { duration: 0 }
-                  : { type: 'spring', stiffness: 380, damping: 32 }
-              }
-            />
+            <span className="glass-indicator" aria-hidden="true" />
           )}
           <span className="segment-label">{item.label}</span>
         </a>

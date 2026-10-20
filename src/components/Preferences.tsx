@@ -59,7 +59,7 @@ export default function Preferences({
       <Button
         variant="ghost"
         size="icon"
-        className="theme-trigger"
+        className="theme-trigger glass"
         aria-label={dark ? d.switchToLight : d.switchToDark}
         title={dark ? d.switchToLight : d.switchToDark}
         onClick={toggleTheme}
