@@ -138,7 +138,9 @@ export async function handleChat(
         chunk_size: 1,
       }),
       signal,
-      redirect: 'error',
+      // workerd supports manual/follow only. Reject 3xx below so Access
+      // credentials are never forwarded to a redirected destination.
+      redirect: 'manual',
     });
     if (
       !response.ok ||

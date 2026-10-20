@@ -837,10 +837,124 @@ button:disabled {
   color: var(--accent);
   margin-bottom: 7px;
 }
-.message .prose {
+.chat-markdown {
+  max-width: 100%;
+  min-width: 0;
+  color: var(--foreground);
+  font-size: 14px;
+  line-height: 1.75;
+  overflow-wrap: anywhere;
+}
+.chat-markdown > :first-child,
+.reasoning > summary + :not(summary) {
+  margin-top: 0;
+}
+.chat-markdown > :last-child {
+  margin-bottom: 0;
+}
+.chat-markdown p {
+  margin: 0.65em 0;
+  white-space: pre-wrap;
+}
+.chat-markdown :is(h1, h2, h3, h4, h5, h6) {
+  margin: 1.1em 0 0.45em;
+  font-weight: 600;
+  line-height: 1.5;
+  letter-spacing: normal;
+}
+.chat-markdown h1 {
+  font-size: 20px;
+}
+.chat-markdown h2 {
+  font-size: 18px;
+}
+.chat-markdown h3 {
+  font-size: 16px;
+}
+.chat-markdown :is(h4, h5, h6) {
   font-size: 14px;
 }
-.message.user .prose {
+.chat-markdown :is(ul, ol) {
+  margin: 0.65em 0;
+  padding-left: 1.6em;
+}
+.chat-markdown ul {
+  list-style: disc;
+}
+.chat-markdown ol {
+  list-style: decimal;
+}
+.chat-markdown li {
+  margin: 0.3em 0;
+}
+.chat-markdown li :is(ul, ol) {
+  margin: 0.3em 0;
+}
+.chat-markdown input[type='checkbox'] {
+  margin-right: 0.4em;
+}
+.chat-markdown a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.chat-markdown pre {
+  max-width: 100%;
+  margin: 0.9em 0;
+  padding: 14px 16px;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--soft);
+  font: 12px/1.65 var(--font-mono);
+  white-space: pre;
+  overflow-wrap: normal;
+}
+.chat-markdown :not(pre) > code {
+  border-radius: 4px;
+  padding: 2px 5px;
+  background: var(--soft);
+  font-family: var(--font-mono);
+  font-size: 0.86em;
+}
+.chat-markdown blockquote {
+  margin: 0.8em 0;
+  border-left: 2px solid var(--line);
+  padding-left: 14px;
+  color: var(--muted);
+}
+.chat-markdown hr {
+  margin: 1.25em 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+}
+.chat-markdown img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+.markdown-table {
+  max-width: 100%;
+  overflow-x: auto;
+  margin: 0.9em 0;
+}
+.markdown-table table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.markdown-table :is(th, td) {
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  text-align: left;
+}
+.markdown-table th {
+  background: var(--soft);
+  font-weight: 600;
+}
+.reasoning :is(h1, h2, h3, h4, h5, h6) {
+  font-size: 1em;
+}
+.message.user .chat-markdown {
   background: var(--soft);
   border-radius: 12px;
   padding: 5px 15px;
@@ -861,6 +975,13 @@ button:disabled {
   background: transparent;
   padding: 8px;
   color: var(--foreground);
+}
+.chat-toolbar select:focus,
+.chat-toolbar select:focus-visible,
+.composer textarea:focus,
+.composer textarea:focus-visible {
+  outline: none;
+  box-shadow: none;
 }
 .chat-notice {
   font-size: 12px;

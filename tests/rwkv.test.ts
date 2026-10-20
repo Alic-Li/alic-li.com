@@ -242,3 +242,25 @@ test('a generated next-turn marker ends the stream and cancels an otherwise open
   ).toBe('answer');
   expect(cancelled).toBe(true);
 });
+
+test('uses the Worker-supported manual redirect mode and rejects redirected upstreams', async () => {
+  let calls = 0;
+  globalThis.fetch = mock(async (_url: unknown, init?: RequestInit) => {
+    calls++;
+    expect(init?.redirect).toBe('manual');
+    return new Response('private redirect response', {
+      status: 302,
+      headers: { Location: 'https://other.example/login' },
+    });
+  }) as unknown as typeof fetch;
+  const response = await handleChat(
+    request({
+      model: 'rwkv-1.5b',
+      messages: [{ role: 'user', content: 'hello' }],
+    }),
+    env,
+  );
+  expect(response.status).toBe(502);
+  expect(await response.text()).toBe('{"error":"upstream_error"}');
+  expect(calls).toBe(1);
+});

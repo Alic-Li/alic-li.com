@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import Markdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
+import ChatMarkdown from './ChatMarkdown';
 import { ArrowUp, Square, Trash2 } from 'lucide-react';
 import { Button } from './ui/button';
 import { t, type Locale } from '../lib/i18n';
@@ -199,20 +198,18 @@ export default function Chat({ lang }: { lang: Locale }) {
                 <div className="message-label">
                   {m.role === 'user' ? d.you : d.assistant}
                 </div>
-                <div className="prose">
+                <div className="chat-markdown">
                   {(parts.reasoning || parts.thinking) && (
                     <details className="reasoning">
                       <summary>
                         {busy && parts.thinking ? d.thinking : d.reasoning}
                       </summary>
-                      <Markdown remarkPlugins={[remarkGfm]}>
-                        {parts.reasoning}
-                      </Markdown>
+                      <ChatMarkdown>{parts.reasoning}</ChatMarkdown>
                     </details>
                   )}
-                  <Markdown remarkPlugins={[remarkGfm]}>
+                  <ChatMarkdown>
                     {parts.answer || (!m.content ? d.loading : '')}
-                  </Markdown>
+                  </ChatMarkdown>
                 </div>
               </div>
             );

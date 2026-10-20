@@ -96,7 +96,7 @@ describe('chat boundary', () => {
       alpha_decay: 0.99,
       chunk_size: 1,
     });
-    expect(sent!.redirect).toBe('error');
+    expect(sent!.redirect).toBe('manual');
     const headers = new Headers(sent!.headers);
     expect(headers.get('CF-Access-Client-Id')).toBe(env.CF_ACCESS_CLIENT_ID!);
     expect(headers.get('CF-Access-Client-Secret')).toBe(
