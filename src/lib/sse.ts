@@ -1,9 +1,14 @@
 /** OpenAI-compatible SSE; supports fragmented UTF-8 and CRLF event boundaries. */
 export async function readCompletion(
   body: ReadableStream<Uint8Array>,
-  onText: (text: string) => void,
+  onText: (text: string) => unknown,
+  signal?: AbortSignal,
 ) {
   const reader = body.getReader();
+  const abort = () => {
+    void reader.cancel().catch(() => {});
+  };
+  signal?.addEventListener('abort', abort, { once: true });
   const decoder = new TextDecoder();
   let buffer = '';
   let completed = false;
@@ -17,12 +22,18 @@ export async function readCompletion(
     if (!data) return;
     const event = JSON.parse(data);
     if (event.error) throw new Error('upstream_error');
-    const delta = event.choices?.[0]?.delta?.content;
-    if (typeof delta === 'string') onText(delta);
+    const choice = event.choices?.find(
+      (choice: { index?: number }) =>
+        choice.index === undefined || choice.index === 0,
+    );
+    const delta = choice?.delta?.content ?? choice?.text;
+    if (typeof delta === 'string' && onText(delta) === false) completed = true;
   };
   try {
+    if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
     while (!completed) {
       const { done, value } = await reader.read();
+      if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
       buffer += done
         ? decoder.decode()
         : decoder.decode(value, { stream: true });
@@ -41,6 +52,7 @@ export async function readCompletion(
       }
     }
   } finally {
+    signal?.removeEventListener('abort', abort);
     await reader.cancel();
     reader.releaseLock();
   }

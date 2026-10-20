@@ -6,6 +6,7 @@ import { Button } from './ui/button';
 import { t, type Locale } from '../lib/i18n';
 import { readCompletion } from '../lib/sse';
 import { requestMessages, type Message } from '../lib/chat-history';
+import { normalizeInput, splitReasoning } from '../lib/rwkv-prompt';
 const storageKey = 'alic-chat-v1';
 export default function Chat({ lang }: { lang: Locale }) {
   const d = t(lang);
@@ -13,6 +14,7 @@ export default function Chat({ lang }: { lang: Locale }) {
   const [models, setModels] = useState<string[]>([]);
   const [model, setModel] = useState('');
   const [input, setInput] = useState('');
+  const [thinking, setThinking] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -79,7 +81,7 @@ export default function Chat({ lang }: { lang: Locale }) {
     if (!input.trim() || busy || !model) return;
     const next: Message[] = [
       ...messages.filter((m) => m.content).slice(-28),
-      { role: 'user', content: input.trim() },
+      { role: 'user', content: normalizeInput(input) },
     ];
     let answer = '';
     const abort = new AbortController();
@@ -93,7 +95,11 @@ export default function Chat({ lang }: { lang: Locale }) {
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model, messages: requestMessages(next, model) }),
+        body: JSON.stringify({
+          model,
+          messages: requestMessages(next, model, thinking),
+          thinking,
+        }),
         signal: abort.signal,
       });
       if (!response.ok || !response.body)
@@ -142,9 +148,20 @@ export default function Chat({ lang }: { lang: Locale }) {
           >
             {!models.length && <option value="">—</option>}
             {models.map((m) => (
-              <option key={m}>{m}</option>
+              <option key={m} value={m}>
+                {m.replace('rwkv-', 'RWKV ').toUpperCase()}
+              </option>
             ))}
           </select>
+          <label className="think-toggle">
+            <input
+              type="checkbox"
+              checked={thinking}
+              onChange={(event) => setThinking(event.target.checked)}
+              disabled={busy}
+            />
+            {d.enableThinking}
+          </label>
           <Button
             variant="ghost"
             size="icon"
@@ -172,18 +189,34 @@ export default function Chat({ lang }: { lang: Locale }) {
               <p>{d.chatHint}</p>
             </div>
           )}
-          {messages.map((m, i) => (
-            <div className={`message ${m.role}`} key={i}>
-              <div className="message-label">
-                {m.role === 'user' ? d.you : d.assistant}
+          {messages.map((m, i) => {
+            const parts =
+              m.role === 'assistant'
+                ? splitReasoning(m.content)
+                : { reasoning: '', answer: m.content, thinking: false };
+            return (
+              <div className={`message ${m.role}`} key={i}>
+                <div className="message-label">
+                  {m.role === 'user' ? d.you : d.assistant}
+                </div>
+                <div className="prose">
+                  {(parts.reasoning || parts.thinking) && (
+                    <details className="reasoning">
+                      <summary>
+                        {busy && parts.thinking ? d.thinking : d.reasoning}
+                      </summary>
+                      <Markdown remarkPlugins={[remarkGfm]}>
+                        {parts.reasoning}
+                      </Markdown>
+                    </details>
+                  )}
+                  <Markdown remarkPlugins={[remarkGfm]}>
+                    {parts.answer || (!m.content ? d.loading : '')}
+                  </Markdown>
+                </div>
               </div>
-              <div className="prose">
-                <Markdown remarkPlugins={[remarkGfm]}>
-                  {m.content || d.loading}
-                </Markdown>
-              </div>
-            </div>
-          ))}
+            );
+          })}
           <div ref={bottom} />
         </div>
         <form className="composer" onSubmit={send}>

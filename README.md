@@ -19,17 +19,29 @@ bun run preview
 
 ## Configure chat
 
-Copy `.env.example` to `.dev.vars` for local use. Set `RWKV_API_URL` to the full HTTPS OpenAI-compatible Chat Completions endpoint, `RWKV_API_KEY` to the provider key, and `RWKV_MODELS` to a comma-separated model allowlist. Restart the dev server after changing configuration.
+Copy `.env.example` to `.dev.vars` for local use. Configure `CF_ACCESS_CLIENT_ID` and `CF_ACCESS_CLIENT_SECRET` as **Worker runtime secrets**, then restart the dev server. Build-time variables alone do not populate a deployed Worker's runtime bindings; the static frontend must never contain these values.
 
-Production secrets:
+Production secrets (or set the same names under Worker Settings → Variables and Secrets):
 
 ```sh
-bunx wrangler secret put RWKV_API_URL
-bunx wrangler secret put RWKV_API_KEY
-bunx wrangler secret put RWKV_MODELS
+bunx wrangler secret put CF_ACCESS_CLIENT_ID
+bunx wrangler secret put CF_ACCESS_CLIENT_SECRET
 ```
 
-The `CHAT_RATE_LIMITER` binding is declared in wrangler.jsonc. Chat remains unavailable until configuration is complete. Never expose provider credentials through PUBLIC_ variables.
+The playground routes four fixed model choices to their respective origins:
+
+| Choice    | Upstream                     |
+| --------- | ---------------------------- |
+| RWKV 1.5B | `https://api-1b5.rwkvos.com` |
+| RWKV 3B   | `https://api-3b.rwkvos.com`  |
+| RWKV 7B   | `https://api-7b.rwkvos.com`  |
+| RWKV 13B  | `https://api-13b.rwkvos.com` |
+
+The Worker sends the two `CF-Access-Client-*` headers to `/v1/batch/completions` with a single raw prompt in `contents`; it does not use Chat Completions message templating. Model choices are stable routing aliases; each server uses its loaded model. `/api/models` returns the four choices once both secrets and the declared `CHAT_RATE_LIMITER` binding exist.
+
+Thinking is off by default. The exact continuation prefixes are `Assistant: <think></think` (off) and `Assistant: <think` (on), intentionally without a final `>`, matching the supplied model format. Historical assistant turns retain complete think tags. CRLF is normalized; runs of two or more newlines, including whitespace-only blank lines, collapse to one newline within each message. Turns are separated by `\n\n`. Reasoning is shown in an expandable section when enabled.
+
+The proxy preserves the backend's default token stops and removes generated next-turn labels / end-of-text markers across SSE boundaries. Output is limited to 2048 tokens with a 90-second timeout. No live credentials belong in this repository, frontend assets, or build logs.
 
 ## Deploy
 

@@ -788,6 +788,26 @@ button:disabled {
   padding: 7px;
   max-width: 190px;
 }
+.think-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.think-toggle input {
+  accent-color: var(--accent);
+}
+.reasoning {
+  margin-bottom: 12px;
+  border-left: 2px solid var(--line);
+  padding-left: 14px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.reasoning summary {
+  padding: 4px 0;
+}
 .chat-toolbar button {
   margin-left: auto;
 }

@@ -1,16 +1,23 @@
+import { completionPrompt, normalizeInput } from './rwkv-prompt';
+import { rwkvModels } from './rwkv-models';
+import { continuationStream } from './rwkv-stream';
+import type { Message } from './chat-history';
+
 export interface ChatEnvironment {
-  RWKV_API_URL?: string;
-  RWKV_API_KEY?: string;
-  RWKV_MODELS?: string;
+  CF_ACCESS_CLIENT_ID?: string;
+  CF_ACCESS_CLIENT_SECRET?: string;
   CHAT_RATE_LIMITER?: {
     limit(options: { key: string }): Promise<{ success: boolean }>;
   };
 }
+export const chatConfigured = (env: ChatEnvironment) =>
+  Boolean(
+    env.CF_ACCESS_CLIENT_ID &&
+    env.CF_ACCESS_CLIENT_SECRET &&
+    env.CHAT_RATE_LIMITER,
+  );
 export const modelsFor = (env: ChatEnvironment) =>
-  (env.RWKV_MODELS || '')
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean);
+  chatConfigured(env) ? rwkvModels.map((model) => model.id) : [];
 const json = (
   error: string,
   status: number,
@@ -33,15 +40,9 @@ export async function handleChat(
       .startsWith('application/json')
   )
     return json('invalid_request', 415);
-  if (
-    !env.RWKV_API_URL ||
-    !env.RWKV_API_KEY ||
-    !modelsFor(env).length ||
-    !env.CHAT_RATE_LIMITER
-  )
-    return json('unavailable', 503);
+  if (!chatConfigured(env)) return json('unavailable', 503);
   const ip = request.headers.get('CF-Connecting-IP') || 'local';
-  const { success } = await env.CHAT_RATE_LIMITER.limit({ key: ip });
+  const { success } = await env.CHAT_RATE_LIMITER!.limit({ key: ip });
   if (!success) return json('rate_limited', 429, { 'Retry-After': '60' });
   // Read with a byte ceiling rather than trusting Content-Length.
   const reader = request.body?.getReader();
@@ -71,10 +72,15 @@ export async function handleChat(
     return json('invalid_request', 400);
   }
   if (!body || typeof body !== 'object') return json('invalid_request', 400);
-  const { model, messages } = body as { model?: unknown; messages?: unknown };
+  const {
+    model,
+    messages,
+    thinking = false,
+  } = body as { model?: unknown; messages?: unknown; thinking?: unknown };
   if (
     typeof model !== 'string' ||
-    !modelsFor(env).includes(model) ||
+    !modelsFor(env).some((id) => id === model) ||
+    typeof thinking !== 'boolean' ||
     !Array.isArray(messages) ||
     messages.length < 1 ||
     messages.length > 30
@@ -92,28 +98,46 @@ export async function handleChat(
     )
   )
     return json('invalid_request', 400);
-  const clean = messages.map((m) => ({
-    role: m.role as string,
-    content: m.content as string,
+  const clean: Message[] = messages.map((m) => ({
+    role: m.role as Message['role'],
+    content: normalizeInput(m.content as string),
   }));
-  if (clean.at(-1)?.role !== 'user') return json('invalid_request', 400);
+  if (
+    clean.at(-1)?.role !== 'user' ||
+    clean.some(
+      (m, i) => !m.content || m.role !== (i % 2 ? 'assistant' : 'user'),
+    )
+  )
+    return json('invalid_request', 400);
   try {
-    const url = new URL(env.RWKV_API_URL);
-    if (url.protocol !== 'https:') return json('unavailable', 503);
-    const response = await fetch(url, {
+    const target = rwkvModels.find((target) => target.id === model)!;
+    const signal = AbortSignal.any([
+      request.signal,
+      AbortSignal.timeout(90000),
+    ]);
+    const response = await fetch(`${target.origin}/v1/batch/completions`, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${env.RWKV_API_KEY}`,
+        'CF-Access-Client-Id': env.CF_ACCESS_CLIENT_ID!,
+        'CF-Access-Client-Secret': env.CF_ACCESS_CLIENT_SECRET!,
         'Content-Type': 'application/json',
         Accept: 'text/event-stream',
+        // Match the client profile accepted by the upstream edge gateway.
+        'User-Agent': 'Mozilla/5.0',
       },
       body: JSON.stringify({
-        model,
-        messages: clean,
+        contents: [completionPrompt(clean, thinking)],
         stream: true,
         max_tokens: 2048,
+        temperature: 1.0,
+        top_k: 5,
+        top_p: 0.3,
+        alpha_presence: 0.2,
+        alpha_frequency: 0.2,
+        alpha_decay: 0.99,
+        chunk_size: 1,
       }),
-      signal: AbortSignal.any([request.signal, AbortSignal.timeout(90000)]),
+      signal,
       redirect: 'error',
     });
     if (
@@ -124,7 +148,7 @@ export async function handleChat(
       await response.body?.cancel();
       return json('upstream_error', 502);
     }
-    return new Response(response.body, {
+    return new Response(continuationStream(response.body, thinking, signal), {
       headers: {
         'Content-Type': 'text/event-stream; charset=utf-8',
         'Cache-Control': 'no-store',

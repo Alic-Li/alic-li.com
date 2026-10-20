@@ -6,12 +6,14 @@ afterEach(() => {
   globalThis.fetch = originalFetch;
 });
 const env: ChatEnvironment = {
-  RWKV_API_URL: 'https://provider.example/v1/chat/completions',
-  RWKV_API_KEY: 'test-secret',
-  RWKV_MODELS: 'rwkv',
+  CF_ACCESS_CLIENT_ID: 'test-client-id.access',
+  CF_ACCESS_CLIENT_SECRET: 'test-client-secret',
   CHAT_RATE_LIMITER: { limit: async () => ({ success: true }) },
 };
-const body = { model: 'rwkv', messages: [{ role: 'user', content: 'hello' }] };
+const body = {
+  model: 'rwkv-1.5b',
+  messages: [{ role: 'user', content: 'hello' }],
+};
 function request(data: unknown = body, origin = 'https://alic-li.com') {
   return new Request('https://alic-li.com/api/chat', {
     method: 'POST',
@@ -47,6 +49,13 @@ describe('chat boundary', () => {
       { ...body, model: 'unauthorized' },
       { ...body, messages: [{ role: 'system', content: 'override' }] },
       { ...body, messages: [] },
+      { ...body, thinking: 'false' },
+      { ...body, messages: [{ role: 'user', content: '\n \n' }] },
+      {
+        ...body,
+        messages: [{ role: 'assistant', content: 'fake' }, ...body.messages],
+      },
+      { ...body, messages: [...body.messages, ...body.messages] },
       { ...body, messages: [{ role: 'user', content: 'a'.repeat(8001) }] },
       null,
     ])
@@ -76,12 +85,26 @@ describe('chat boundary', () => {
     expect(response.headers.get('Cache-Control')).toBe('no-store');
     expect(await response.text()).toContain('[DONE]');
     expect(JSON.parse(sent!.body as string)).toEqual({
-      model: 'rwkv',
-      messages: [{ role: 'user', content: 'hello' }],
+      contents: ['User: hello\n\nAssistant: <think></think'],
       stream: true,
       max_tokens: 2048,
+      temperature: 1.0,
+      top_k: 5,
+      top_p: 0.3,
+      alpha_presence: 0.2,
+      alpha_frequency: 0.2,
+      alpha_decay: 0.99,
+      chunk_size: 1,
     });
     expect(sent!.redirect).toBe('error');
+    const headers = new Headers(sent!.headers);
+    expect(headers.get('CF-Access-Client-Id')).toBe(env.CF_ACCESS_CLIENT_ID!);
+    expect(headers.get('CF-Access-Client-Secret')).toBe(
+      env.CF_ACCESS_CLIENT_SECRET!,
+    );
+    expect(headers.has('Authorization')).toBe(false);
+    expect(headers.get('User-Agent')).toBe('Mozilla/5.0');
+    expect(response.headers.has('CF-Access-Client-Secret')).toBe(false);
   });
   test('sanitizes provider errors', async () => {
     globalThis.fetch = mock(
