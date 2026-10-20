@@ -124,25 +124,54 @@ const posts = (
         <div>
           <h2>{d.visionTitle}</h2>
           <p>{d.visionBody}</p>
+          <a class="text-link" href="https://github.com/Alic-Li/RetinexRWKV">
+            RetinexRWKV · {d.source} ↗
+          </a>
         </div>
       </article>
     </>
   )}
   {page === 'lab' && (
-    <article class="workbench">
-      <div>
-        <span class="section-label">{d.experimental}</span>
-        <h2>{d.chatTitle}</h2>
-        <p>{d.currentBody}</p>
-        <a href={pathFor(lang, 'lab/chat')} class="primary-link">
-          {d.playground} ↗
+    <>
+      <article class="workbench">
+        <div>
+          <span class="section-label">{d.experimental}</span>
+          <h2>{d.chatTitle}</h2>
+          <p>{d.currentBody}</p>
+          <a href={pathFor(lang, 'lab/chat')} class="primary-link">
+            {d.playground} ↗
+          </a>
+        </div>
+        <div class="experiment-visual" aria-hidden="true">
+          {Array.from({ length: 29 }, (_, i) => (
+            <span style={`--bar:${15 + Math.sin(i * 0.6) ** 2 * 65}px`}></span>
+          ))}
+        </div>
+      </article>
+      <div class="lab-experiments">
+        <a
+          class="lab-experiment-card"
+          href="https://huggingface.co/spaces/Alic-Li/RWKV-Desensitization-0.4B"
+        >
+          <span class="section-label">0.4B · Hugging Face Space</span>
+          <h2>RWKV Desensitization 0.4B</h2>
+          <p>{d.desensitizationDescription}</p>
+          <span class="text-link">
+            {d.openSpace} <span aria-hidden="true">↗</span>
+          </span>
+        </a>
+        <a
+          class="lab-experiment-card"
+          href="https://huggingface.co/spaces/Alic-Li/MiniRWKV_7_DE_34.2M"
+        >
+          <span class="section-label">34.2M · Hugging Face Space</span>
+          <h2>MiniRWKV-7 DE 34.2M</h2>
+          <p>{d.miniRwkvDescription}</p>
+          <span class="text-link">
+            {d.openSpace} <span aria-hidden="true">↗</span>
+          </span>
         </a>
       </div>
-      <div class="experiment-visual" aria-hidden="true">
-        {Array.from({ length: 29 }, (_, i) => (
-          <span style={`--bar:${15 + Math.sin(i * 0.6) ** 2 * 65}px`}></span>
-        ))}
-      </div>
-    </article>
+    </>
   )}
 </div>

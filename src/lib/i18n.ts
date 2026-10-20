@@ -80,6 +80,11 @@ const en = {
   labHeading: 'Follow the curiosity.',
   labIntro:
     'A home for small, interactive experiments. Some useful. Some simply interesting.',
+  openSpace: 'Try on Hugging Face',
+  desensitizationDescription:
+    'A 0.4B-parameter RWKV demo for text redaction. Explore masking personal details such as names, contact information, and account numbers with [REDACTED].',
+  miniRwkvDescription:
+    'A compact, 34.2M-parameter RWKV-7 chat demo running on CPU. Explore multi-turn conversations and streaming generation, with adjustable temperature and top-p.',
   source: 'View source',
   chatTitle: 'RWKV Playground',
   chatIntro: 'A quiet space to think with a language model.',
@@ -185,6 +190,11 @@ const zh: Dictionary = {
   researchHeading: '模型、模态与系统。',
   labHeading: '跟随好奇心。',
   labIntro: '一些小小的交互实验。有些实用，有些只是有趣。',
+  openSpace: '前往 Hugging Face 体验',
+  desensitizationDescription:
+    '基于 0.4B 参数 RWKV 的文本脱敏演示，体验将姓名、联系方式、账号等个人敏感信息替换为 [REDACTED] 的处理效果。',
+  miniRwkvDescription:
+    '仅 34.2M 参数的轻量 RWKV-7 对话演示，使用 CPU 推理。体验小参数循环模型的多轮聊天与流式生成，并可调整温度和 top-p。',
   source: '查看源码',
   chatTitle: 'RWKV 实验场',
   chatIntro: '与语言模型一起思考的安静空间。',
