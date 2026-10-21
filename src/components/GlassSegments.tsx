@@ -23,6 +23,19 @@ export default function GlassSegments({
 }) {
   const [active, setActive] = useState(selected);
   const [pressed, setPressed] = useState(false);
+  const pressedAt = useRef(0);
+  const releaseTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
+  );
+  useEffect(() => () => clearTimeout(releaseTimer.current), []);
+  function releasePress() {
+    clearTimeout(releaseTimer.current);
+    releaseTimer.current = setTimeout(
+      () => setPressed(false),
+      Math.max(0, 240 - (performance.now() - pressedAt.current)),
+    );
+    lens.current?.press(false);
+  }
   const root = useRef<HTMLElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const lens = useRef<ReturnType<typeof createGlassLens>>(null);
@@ -49,7 +62,6 @@ export default function GlassSegments({
   const touchContextUntil = useRef(0);
   useEffect(() => {
     setActive(selected);
-    setPressed(false);
     gesture.current = null;
   }, [selected, items[0]?.href]);
 
@@ -109,6 +121,8 @@ export default function GlassSegments({
     // Capture immediately: touch may otherwise be taken over by a native
     // link preview or leave the original anchor before the drag threshold.
     event.currentTarget.setPointerCapture(event.pointerId);
+    clearTimeout(releaseTimer.current);
+    pressedAt.current = performance.now();
     setPressed(true);
     lens.current?.press(true);
     const link = (event.target as Element).closest('a');
@@ -150,8 +164,7 @@ export default function GlassSegments({
     const current = gesture.current;
     if (!current || current.id !== event.pointerId) return;
     gesture.current = null;
-    setPressed(false);
-    lens.current?.press(false);
+    releasePress();
     // Pointer capture retargets the compatibility click to the nav. Commit
     // taps and drags here, and suppress delayed mobile clicks across route swaps.
     suppressClickUntil.current = performance.now() + 500;
@@ -183,9 +196,8 @@ export default function GlassSegments({
       if (root.current?.hasPointerCapture(current.id))
         root.current.releasePointerCapture(current.id);
     }
-    setPressed(false);
+    releasePress();
     setActive(selected);
-    lens.current?.press(false);
     lens.current?.select(
       (items.find((item) => item.key === selected) ?? items[0]).href,
     );

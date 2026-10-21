@@ -122,6 +122,41 @@ const posts = (
       </article>
       <article class="project-block">
         <div>
+          <div class="tags">IEEE JSTARS · 2026 · Vol. 19 · 24069–24084</div>
+          <h2>
+            CMRWNet: Cross-Modal RWKV Network With Window-Guided Alignment for
+            High-Fidelity Pansharpening
+          </h2>
+          <p>
+            {lang === 'en'
+              ? 'An efficient pansharpening network combining window-guided cross-modal alignment with linear-complexity RWKV global mixing to preserve spectral fidelity and recover fine spatial details.'
+              : '面向全色锐化的高效跨模态 RWKV 网络，结合窗口引导对齐与线性复杂度的全局特征交互，在保留光谱信息的同时恢复精细空间细节。'}
+          </p>
+          <p>
+            IEEE Journal of Selected Topics in Applied Earth Observations and
+            Remote Sensing ·{' '}
+            <time datetime="2026-07-17">
+              {lang === 'en' ? 'July 17, 2026' : '2026 年 7 月 17 日'}
+            </time>
+          </p>
+          <div class="contact-links">
+            <a
+              class="text-link"
+              href="https://ieeexplore.ieee.org/abstract/document/11614160"
+            >
+              {d.paper} ↗
+            </a>
+            <a
+              class="text-link"
+              href="https://doi.org/10.1109/JSTARS.2026.3714757"
+            >
+              DOI: 10.1109/JSTARS.2026.3714757 ↗
+            </a>
+          </div>
+        </div>
+      </article>
+      <article class="project-block">
+        <div>
           <h2>{d.visionTitle}</h2>
           <p>{d.visionBody}</p>
           <a class="text-link" href="https://github.com/Alic-Li/RetinexRWKV">
