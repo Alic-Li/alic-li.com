@@ -50,43 +50,6 @@ const posts = (await getCollection('blog', ({ data }) => data.lang === lang))
       ))}
     </div>
   </section>
-  <section>
-    <div class="section-heading">
-      <div>
-        <h2>{d.selected}</h2>
-        <p>{d.selectedSub}</p>
-      </div>
-      <span class="section-label">01 — 03</span>
-    </div>
-    <div class="explore-grid">
-      {[
-        {
-          path: 'projects',
-          icon: '⌘',
-          title: d.projectTitle,
-          body: d.projectBody,
-        },
-        {
-          path: 'publications',
-          icon: '↗',
-          title: d.researchTitle,
-          body: d.researchBody,
-        },
-        { path: 'lab', icon: '※', title: d.labTitle, body: d.labBody },
-      ].map((card) => (
-        <a class="explore-card" href={pathFor(lang, card.path)}>
-          <div class="card-top">
-            <span class="card-icon" aria-hidden="true">
-              {card.icon}
-            </span>
-            <span aria-hidden="true">↗</span>
-          </div>
-          <h3>{card.title}</h3>
-          <p>{card.body}</p>
-        </a>
-      ))}
-    </div>
-  </section>
   <section class="writing-section">
     <div class="section-heading">
       <div>

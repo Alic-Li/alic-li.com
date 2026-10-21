@@ -51,7 +51,7 @@ const en = {
   labTitle: 'Room to experiment',
   labBody:
     'Try the RWKV playground and explore recurrent language models through conversation.',
-  footer: 'Made with care. Always a work in progress.',
+  footer: 'Practice is the Sole Criterion for Testing Truth',
   back: 'Back to writing',
   read: 'Read note',
   emptyProjects:
@@ -76,7 +76,7 @@ const en = {
   blogTitle: 'Notes & observations.',
   blogBody: 'On software, systems, and the details that make them interesting.',
   projectsHeading: 'Things taking shape.',
-  researchHeading: 'Models, modalities, and systems.',
+  researchHeading: 'Multi-modal & Computer Vision',
   labHeading: 'Follow the curiosity.',
   labIntro:
     'A home for small, interactive experiments. Some useful. Some simply interesting.',
@@ -163,7 +163,7 @@ const zh: Dictionary = {
   researchBody: '基于 RWKV-7 的多模态学习，以及图像重建与增强研究。',
   labTitle: '给探索一点空间',
   labBody: '在 RWKV 实验场中，通过对话了解循环语言模型。',
-  footer: '用心构建，持续生长。',
+  footer: '实践是检验真理的唯一标准',
   back: '返回文章列表',
   read: '阅读笔记',
   emptyProjects:
@@ -187,7 +187,7 @@ const zh: Dictionary = {
   blogTitle: '笔记与观察。',
   blogBody: '关于软件、系统，以及那些有意思的细节。',
   projectsHeading: '让想法成形。',
-  researchHeading: '模型、模态与系统。',
+  researchHeading: '多模态&计算机视觉',
   labHeading: '跟随好奇心。',
   labIntro: '一些小小的交互实验。有些实用，有些只是有趣。',
   openSpace: '前往 Hugging Face 体验',
